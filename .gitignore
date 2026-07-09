@@ -1,0 +1,25 @@
+# Go build output
+/restic-ui
+/bin/
+/dist/
+
+# Runtime data / local SQLite
+/data/
+/config/
+*.db
+*.db-shm
+*.db-wal
+
+# Node
+web/node_modules/
+
+# Built frontend assets are generated (Docker build / `pnpm build`).
+# Keep only the placeholder index.html so `go build` works on a fresh checkout.
+web/dist/*
+!web/dist/index.html
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/

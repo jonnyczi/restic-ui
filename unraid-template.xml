@@ -1,0 +1,53 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>restic-ui</Name>
+  <Repository>restic-ui:latest</Repository>
+  <Registry/>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support/>
+  <Project>https://github.com/jonnyczi/restic-ui</Project>
+  <Overview>
+    Web UI for configuring and running restic backups. Manage repositories
+    (local, S3-compatible, SFTP, rclone), schedule backup plans with retention,
+    browse and restore files from any snapshot without FUSE, replicate
+    snapshots to a second repository, and get notifications via Apprise.
+  </Overview>
+  <Category>Backup:</Category>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <Icon/>
+  <ExtraParams/>
+  <PostArgs/>
+  <DonateText/>
+  <DonateLink/>
+  <Description>
+    Web UI + backend for restic backups, built for homelab use.
+    Mount the shares you want to back up (read-only recommended) under /sources,
+    and any local backup destination under /repos.
+  </Description>
+  <Config Name="WebUI Port" Target="8080" Default="8080" Mode="tcp"
+    Description="Port for the web interface" Type="Port" Display="always"
+    Required="true" Mask="false">8080</Config>
+  <Config Name="Config" Target="/config" Default="/mnt/user/appdata/restic-ui"
+    Mode="rw" Description="App configuration, database, and generated master key"
+    Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/restic-ui</Config>
+  <Config Name="Sources (read-only)" Target="/sources" Default="/mnt/user"
+    Mode="ro" Description="Data to back up. Mount your shares here read-only."
+    Type="Path" Display="always" Required="false" Mask="false">/mnt/user</Config>
+  <Config Name="Local repositories" Target="/repos" Default="/mnt/user/backups/restic"
+    Mode="rw" Description="Destination for local restic repositories (optional if only using cloud backends)"
+    Type="Path" Display="always" Required="false" Mask="false">/mnt/user/backups/restic</Config>
+  <Config Name="Master key" Target="RESTIC_UI_KEY" Default="" Mode=""
+    Description="Key used to encrypt stored credentials. Generate with: openssl rand -base64 32. If empty, one is generated and stored in /config/secret.key (back it up!)."
+    Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="PUID" Target="PUID" Default="99" Mode=""
+    Description="User ID for file ownership (Unraid default: 99 / nobody)"
+    Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Mode=""
+    Description="Group ID for file ownership (Unraid default: 100 / users)"
+    Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
+  <Config Name="Timezone" Target="TZ" Default="America/New_York" Mode=""
+    Description="Timezone for backup schedules" Type="Variable" Display="advanced"
+    Required="false" Mask="false">America/New_York</Config>
+</Container>

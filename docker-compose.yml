@@ -1,0 +1,36 @@
+services:
+  restic-ui:
+    build: .
+    image: restic-ui:latest
+    container_name: restic-ui
+    ports:
+      - "8080:8080"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+      # Master key used to encrypt stored credentials at rest.
+      # Generate one with:  openssl rand -base64 32
+      # If unset, a key is generated and saved under /config on first run
+      # (back it up — losing it means losing access to stored credentials).
+      - RESTIC_UI_KEY=${RESTIC_UI_KEY:-}
+    volumes:
+      - ./config:/config
+      # Mount the directories you want to back up (read-only recommended):
+      # - /mnt/user/appdata:/sources/appdata:ro
+      # Mount any local backup target(s):
+      # - /mnt/user/backups:/repos
+    restart: unless-stopped
+
+  # Optional: Apprise API sidecar for notifications (Discord, Telegram, ntfy,
+  # email, ...). Point restic-ui's Settings → Apprise API server URL at
+  # http://apprise:8000
+  # apprise:
+  #   image: lscr.io/linuxserver/apprise-api:latest
+  #   container_name: apprise
+  #   environment:
+  #     - PUID=1000
+  #     - PGID=1000
+  #   volumes:
+  #     - ./apprise:/config
+  #   restart: unless-stopped

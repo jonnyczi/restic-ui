@@ -1,0 +1,12 @@
+.git
+.gitignore
+**/node_modules
+web/dist
+data
+config
+*.db
+*.db-shm
+*.db-wal
+bin
+restic-ui
+*.md
