@@ -6,7 +6,12 @@ cd "$(dirname "$0")"
 
 docker compose -f docker-compose.test.yml down --remove-orphans >/dev/null 2>&1 || true
 
-rm -rf .testenv
+# Volumes may contain files owned by another uid (e.g. if a container ran with
+# a different PUID); fall back to a root container to clear those.
+if ! rm -rf .testenv 2>/dev/null; then
+  echo "reset-env: falling back to container-based cleanup"
+  docker run --rm -v "$(pwd):/work" -w /work alpine:3.20 rm -rf .testenv
+fi
 mkdir -p .testenv/config .testenv/repos .testenv/restore \
          .testenv/sources/docs .testenv/sources/photos
 

@@ -11,15 +11,26 @@ export const E2E_DIR = __dirname;
 export const testenvPath = (...parts: string[]) =>
   path.join(E2E_DIR, ".testenv", ...parts);
 
+// Every compose invocation must see the same PUID/PGID: `compose up` re-reads
+// the interpolation environment, and a value that differs from the running
+// container's causes a recreate with the new uid — which broke CI (runner uid
+// 1001 vs the compose default 1000, leaving /config files undeletable).
+const composeEnv = {
+  ...process.env,
+  PUID: String(process.getuid?.() ?? 1000),
+  PGID: String(process.getgid?.() ?? 1000),
+};
+
 const compose = (args: string) =>
   execSync(`docker compose -f docker-compose.test.yml ${args}`, {
     cwd: E2E_DIR,
+    env: composeEnv,
     stdio: ["ignore", "pipe", "inherit"],
   }).toString();
 
 /** Reset volumes + containers to a pristine, seeded state. */
 export function resetEnv() {
-  execSync("bash ./reset-env.sh", { cwd: E2E_DIR, stdio: "inherit" });
+  execSync("bash ./reset-env.sh", { cwd: E2E_DIR, env: composeEnv, stdio: "inherit" });
 }
 
 /** Restart the app container and wait for it to come back healthy. */
