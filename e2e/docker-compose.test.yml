@@ -1,0 +1,46 @@
+# Test environment for the e2e suite: the app plus a MinIO (S3 backend tests)
+# and a fake Apprise API server (notification tests). Reset + started by
+# reset-env.sh; torn down with `docker compose -f docker-compose.test.yml down`.
+services:
+  app:
+    build: ..
+    image: restic-ui:test
+    ports:
+      - "8199:8080"
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=UTC
+    volumes:
+      - ./.testenv/config:/config
+      - ./.testenv/repos:/repos
+      - ./.testenv/sources:/sources:ro
+      - ./.testenv/restore:/restore
+    depends_on:
+      - minio
+      - apprise
+
+  minio:
+    image: minio/minio
+    command: server /data
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin123
+
+  # Minimal Apprise API stand-in: accepts POST /notify, logs the payload, and
+  # returns 200. Tests assert on its container logs.
+  apprise:
+    image: node:22-alpine
+    command:
+      - node
+      - -e
+      - |
+        require("http").createServer((req, res) => {
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            console.log("NOTIFY", req.method, req.url, body);
+            res.writeHead(200);
+            res.end("{}");
+          });
+        }).listen(8000, () => console.log("fake apprise listening"));

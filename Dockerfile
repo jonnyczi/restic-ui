@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
-# ---- Stage 1: build the React SPA ----
-FROM node:22-alpine AS web
+# ---- Stage 1: build the React SPA (build platform; output is arch-neutral) ----
+FROM --platform=$BUILDPLATFORM node:22-alpine AS web
 WORKDIR /web
 RUN corepack enable
 COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
@@ -9,8 +9,8 @@ RUN pnpm install --frozen-lockfile
 COPY web/ ./
 RUN pnpm build
 
-# ---- Stage 2: build the Go binary (embeds the SPA) ----
-FROM golang:1.26-alpine AS build
+# ---- Stage 2: build the Go binary (cross-compiled from the build platform) ----
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -18,12 +18,13 @@ COPY . .
 # Replace the placeholder dist with the freshly built SPA before embedding.
 COPY --from=web /web/dist ./web/dist
 ARG VERSION=docker
-RUN CGO_ENABLED=0 go build \
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} go build \
     -ldflags="-s -w -X github.com/jonnyczi/restic-ui/internal/api.Version=${VERSION}" \
     -o /out/restic-ui ./cmd/restic-ui
 
 # ---- Stage 3: fetch pinned restic + rclone binaries (checksum-verified) ----
-FROM alpine:3.20 AS tools
+FROM --platform=$BUILDPLATFORM alpine:3.20 AS tools
 ARG TARGETARCH
 ARG RESTIC_VERSION=0.17.3
 ARG RCLONE_VERSION=1.68.2
@@ -45,8 +46,7 @@ RUN set -eux; \
       "https://github.com/rclone/rclone/releases/download/v${RCLONE_VERSION}/SHA256SUMS"; \
     (cd /tmp && grep " ${rclone_file}\$" rclone.sums | sha256sum -c -); \
     unzip -j "/tmp/${rclone_file}" "*/rclone" -d /tmp; \
-    install -m 0755 /tmp/rclone /usr/local/bin/rclone; \
-    /usr/local/bin/restic version; /usr/local/bin/rclone version | head -1
+    install -m 0755 /tmp/rclone /usr/local/bin/rclone
 
 # ---- Stage 4: runtime image ----
 FROM alpine:3.20

@@ -64,10 +64,31 @@ make build      # -> bin/restic-ui  (frontend built + embedded)
 Build the container:
 
 ```sh
-make docker     # -> restic-ui:latest
+make docker            # -> restic-ui:latest (current arch)
+make docker-multiarch  # -> linux/amd64 + linux/arm64 (requires buildx)
 # or
 docker compose up --build
 ```
+
+## Testing
+
+```sh
+make test    # Go unit tests
+make e2e     # browser end-to-end suite (Playwright + Docker)
+```
+
+The e2e suite (`e2e/`) spins up a disposable environment —
+the app, a MinIO server, and a fake Apprise API — via
+`e2e/docker-compose.test.yml`, then drives the real UI in Chromium:
+first-run setup, auth/session/CSRF, repository management (local + S3),
+plans with the folder picker, live WebSocket operations, cron firing,
+retention pruning, snapshot browse/download/restore, copy between repos,
+and notifications. Set `CHROMIUM_BIN=/path/to/chromium` to use a system
+browser instead of Playwright's download.
+
+CI (GitHub Actions) runs vet/tests, frontend typecheck/build, the e2e
+suite, and a multi-arch (amd64 + arm64) image build — pushed to GHCR on
+`main` and version tags.
 
 ## Configuration (environment)
 

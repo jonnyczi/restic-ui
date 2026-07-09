@@ -12,6 +12,13 @@
 
 # Node
 web/node_modules/
+web/tsconfig.tsbuildinfo
+
+# E2E suite
+e2e/node_modules/
+e2e/.testenv/
+e2e/test-results/
+e2e/playwright-report/
 
 # Built frontend assets are generated (Docker build / `pnpm build`).
 # Keep only the placeholder index.html so `go build` works on a fresh checkout.
