@@ -1,13 +1,14 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>restic-ui</Name>
-  <Repository>restic-ui:latest</Repository>
-  <Registry/>
+  <Repository>jonnyczi/restic-ui:latest</Repository>
+  <Registry>https://hub.docker.com/r/jonnyczi/restic-ui</Registry>
   <Network>bridge</Network>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
-  <Support/>
+  <Support>https://github.com/jonnyczi/restic-ui/issues</Support>
   <Project>https://github.com/jonnyczi/restic-ui</Project>
+  <TemplateURL>https://raw.githubusercontent.com/jonnyczi/restic-ui/main/unraid-template.xml</TemplateURL>
   <Overview>
     Web UI for configuring and running restic backups. Manage repositories
     (local, S3-compatible, SFTP, rclone), schedule backup plans with retention,
@@ -16,7 +17,7 @@
   </Overview>
   <Category>Backup:</Category>
   <WebUI>http://[IP]:[PORT:8080]/</WebUI>
-  <Icon/>
+  <Icon>https://raw.githubusercontent.com/jonnyczi/restic-ui/main/icon.png</Icon>
   <ExtraParams/>
   <PostArgs/>
   <DonateText/>

@@ -33,8 +33,14 @@ docker compose up --build
 ```
 
 Mount the folders you want to back up (read-only is recommended) and a
-destination folder for local repositories — see `docker-compose.yml`. An
-Unraid Community Applications template is provided in `unraid-template.xml`.
+destination folder for local repositories — see `docker-compose.yml`.
+Prebuilt multi-arch images are on Docker Hub as
+[`jonnyczi/restic-ui`](https://hub.docker.com/r/jonnyczi/restic-ui).
+
+**Unraid:** a Community Applications template is provided in
+`unraid-template.xml`. Until it lands in CA, copy it to
+`/boot/config/plugins/dockerMan/templates-user/` on your Unraid box, then
+pick *restic-ui* from the template dropdown under Docker → Add Container.
 
 ## Architecture
 
