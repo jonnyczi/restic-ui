@@ -87,8 +87,8 @@ and notifications. Set `CHROMIUM_BIN=/path/to/chromium` to use a system
 browser instead of Playwright's download.
 
 CI (GitHub Actions) runs vet/tests, frontend typecheck/build, the e2e
-suite, and a multi-arch (amd64 + arm64) image build — pushed to GHCR on
-`main` and version tags.
+suite, and a multi-arch (amd64 + arm64) image build — pushed to GHCR
+and Docker Hub (jonnyczi/restic-ui) on `main` and version tags.
 
 ## Configuration (environment)
 

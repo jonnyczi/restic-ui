@@ -18,11 +18,11 @@ dev:
 	cd web && pnpm dev
 
 docker:
-	docker build -t restic-ui:latest .
+	docker build -t jonnyczi/restic-ui:latest .
 
 # Cross-platform image (requires a buildx builder: docker buildx create --use)
 docker-multiarch:
-	docker buildx build --platform linux/amd64,linux/arm64 -t restic-ui:latest .
+	docker buildx build --platform linux/amd64,linux/arm64 -t jonnyczi/restic-ui:latest .
 
 tidy:
 	go mod tidy
