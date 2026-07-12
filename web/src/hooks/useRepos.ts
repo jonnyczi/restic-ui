@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import type { Repo, RepoInput, RepoStats, Snapshot } from "@/lib/types";
+import type { Operation, Repo, RepoInput, RepoStats, Snapshot } from "@/lib/types";
 
 export function useRepos() {
   return useQuery({
@@ -30,6 +30,21 @@ export function useRepoAction() {
   return useMutation({
     mutationFn: ({ id, action }: { id: number; action: "init" | "test" | "check" | "unlock" }) =>
       api.post<Record<string, unknown>>(`/api/repos/${id}/${action}`),
+  });
+}
+
+/** Forget a single snapshot (async op; snapshot list refreshes via the event stream). */
+export function useForgetSnapshot() {
+  return useMutation({
+    mutationFn: ({ repoId, snapshotId }: { repoId: number; snapshotId: string }) =>
+      api.post<Operation>(`/api/repos/${repoId}/snapshots/${snapshotId}/forget`),
+  });
+}
+
+/** Prune unreferenced data from a repository (async op). */
+export function usePruneRepo() {
+  return useMutation({
+    mutationFn: (repoId: number) => api.post<Operation>(`/api/repos/${repoId}/prune`),
   });
 }
 

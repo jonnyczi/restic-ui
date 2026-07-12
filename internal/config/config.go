@@ -8,6 +8,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -19,6 +20,10 @@ type Config struct {
 	// DataDir is where the SQLite database and generated master key live.
 	// In the container this is /config; locally it defaults to ./data.
 	DataDir string
+	// CacheDir is where restic keeps its repository metadata cache
+	// (exported as RESTIC_CACHE_DIR so restic never falls back to
+	// $HOME/.cache/restic, which is unwritable in the container).
+	CacheDir string
 	// ResticBinary is the path (or PATH name) of the restic executable.
 	ResticBinary string
 	// RcloneBinary is the path (or PATH name) of the rclone executable.
@@ -54,6 +59,10 @@ func Load() (*Config, error) {
 	}
 	if v := os.Getenv("DATA_DIR"); v != "" {
 		c.DataDir = v
+	}
+	c.CacheDir = filepath.Join(c.DataDir, "cache")
+	if v := os.Getenv("RESTIC_CACHE_DIR"); v != "" {
+		c.CacheDir = v
 	}
 	if v := os.Getenv("RESTIC_BINARY"); v != "" {
 		c.ResticBinary = v

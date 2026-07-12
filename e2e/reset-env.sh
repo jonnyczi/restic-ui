@@ -13,7 +13,10 @@ if ! rm -rf .testenv 2>/dev/null; then
   docker run --rm -v "$(pwd):/work" -w /work alpine:3.20 rm -rf .testenv
 fi
 mkdir -p .testenv/config .testenv/repos .testenv/restore \
-         .testenv/sources/docs .testenv/sources/photos
+         .testenv/sources/docs .testenv/sources/photos .testenv/sshkeys
+
+# Throwaway keypair for the SFTP test container (BatchMode forbids passwords).
+ssh-keygen -t ed25519 -N "" -q -f .testenv/sshkeys/id_ed25519
 
 echo "hello world" > .testenv/sources/docs/a.txt
 echo "# notes" > .testenv/sources/docs/b.md

@@ -16,8 +16,23 @@ import (
 func (s *Server) snapRoutes(r chi.Router) {
 	r.Get("/repos/{id}/snapshots/{snap}/ls", s.handleSnapLs)
 	r.Get("/repos/{id}/snapshots/{snap}/dump", s.handleSnapDump)
+	r.Post("/repos/{id}/snapshots/{snap}/forget", s.handleSnapForget)
 	r.Post("/repos/{id}/restore", s.handleRepoRestore)
 	r.Post("/repos/{id}/copy", s.handleRepoCopy)
+}
+
+func (s *Server) handleSnapForget(w http.ResponseWriter, r *http.Request) {
+	id, err := repoID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	op, err := s.ops.EnqueueForgetSnapshot(r.Context(), id, chi.URLParam(r, "snap"))
+	if err != nil {
+		writeRepoError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, op)
 }
 
 func (s *Server) handleSnapLs(w http.ResponseWriter, r *http.Request) {

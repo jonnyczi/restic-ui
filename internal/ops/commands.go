@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strings"
 
 	"github.com/jonnyczi/restic-ui/internal/restic"
@@ -55,6 +56,27 @@ func (r *Runner) EnqueueRestore(ctx context.Context, repoID int64, snapshotID, i
 // EnqueueCheck verifies repository integrity in the background.
 func (r *Runner) EnqueueCheck(ctx context.Context, repoID int64) (*Operation, error) {
 	return r.enqueueCommand(ctx, "check", repoID, nil, "Checking repository integrity", []string{"check"})
+}
+
+// snapIDRe matches restic snapshot ids (short or full hex). The UI only ever
+// sends ids taken from `restic snapshots` output; anything else (flags,
+// "latest", shell metacharacters) is rejected before reaching argv.
+var snapIDRe = regexp.MustCompile(`^[0-9a-fA-F]{8,64}$`)
+
+// EnqueueForgetSnapshot removes a single snapshot's record from the
+// repository. Data it references stays on disk until a prune runs.
+func (r *Runner) EnqueueForgetSnapshot(ctx context.Context, repoID int64, snapshotID string) (*Operation, error) {
+	if !snapIDRe.MatchString(snapshotID) {
+		return nil, errors.New("invalid snapshot id")
+	}
+	return r.enqueueCommand(ctx, "forget", repoID, nil,
+		fmt.Sprintf("Forgetting snapshot %s", short(snapshotID)), []string{"forget", snapshotID})
+}
+
+// EnqueuePrune deletes data no longer referenced by any snapshot.
+func (r *Runner) EnqueuePrune(ctx context.Context, repoID int64) (*Operation, error) {
+	return r.enqueueCommand(ctx, "prune", repoID, nil,
+		"Pruning unreferenced data from repository", []string{"prune"})
 }
 
 // EnqueueCopy copies snapshots from one repository to another (3-2-1 backups).

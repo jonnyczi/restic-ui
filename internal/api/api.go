@@ -46,7 +46,7 @@ func NewServer(st *store.Store, cfg *config.Config, box *crypto.Box) *Server {
 		auth:   auth.NewService(st),
 		repos:  repo.NewService(st, box, cfg.DataDir),
 		plans:  plan.NewService(st),
-		restic: &restic.Runner{Bin: cfg.ResticBinary},
+		restic: &restic.Runner{Bin: cfg.ResticBinary, CacheDir: cfg.CacheDir},
 		hub:    ops.NewHub(),
 		notify: notify.NewService(st),
 	}
