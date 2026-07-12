@@ -21,6 +21,7 @@ import (
 func stubRestic(t *testing.T, exitCode int) string {
 	t.Helper()
 	script := `#!/bin/sh
+echo "ARGS: $@"
 echo '{"message_type":"status","percent_done":0.5,"total_files":10,"files_done":5,"total_bytes":1000,"bytes_done":500}'
 echo '{"message_type":"summary","snapshot_id":"abcdef1234567890","files_new":8,"files_changed":1,"files_unmodified":1,"data_added":12345,"total_files_processed":10,"total_bytes_processed":1000,"total_duration":0.5}'
 `
@@ -36,7 +37,7 @@ echo '{"message_type":"summary","snapshot_id":"abcdef1234567890","files_new":8,"
 	return path
 }
 
-func setup(t *testing.T, resticBin string) (*Runner, *Hub, int64) {
+func setup(t *testing.T, resticBin string) (*Runner, *Hub, int64, int64) {
 	t.Helper()
 	dir := t.TempDir()
 	st, err := store.Open(dir)
@@ -65,7 +66,7 @@ func setup(t *testing.T, resticBin string) (*Runner, *Hub, int64) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return runner, hub, p.ID
+	return runner, hub, p.ID, rp.ID
 }
 
 // waitForStatus polls until the op reaches a terminal status.
@@ -88,7 +89,7 @@ func waitForStatus(t *testing.T, r *Runner, opID int64) *Operation {
 }
 
 func TestBackupSuccessPersistsSummaryAndLogs(t *testing.T) {
-	runner, hub, planID := setup(t, stubRestic(t, 0))
+	runner, hub, planID, _ := setup(t, stubRestic(t, 0))
 	events, cancelSub := hub.Subscribe()
 	defer cancelSub()
 
@@ -155,7 +156,7 @@ drain:
 }
 
 func TestBackupWarningExitCode3(t *testing.T) {
-	runner, _, planID := setup(t, stubRestic(t, 3))
+	runner, _, planID, _ := setup(t, stubRestic(t, 3))
 	op, err := runner.EnqueueBackup(context.Background(), planID)
 	if err != nil {
 		t.Fatal(err)
@@ -170,7 +171,7 @@ func TestBackupWarningExitCode3(t *testing.T) {
 }
 
 func TestBackupErrorExitCode1(t *testing.T) {
-	runner, _, planID := setup(t, stubRestic(t, 1))
+	runner, _, planID, _ := setup(t, stubRestic(t, 1))
 	op, err := runner.EnqueueBackup(context.Background(), planID)
 	if err != nil {
 		t.Fatal(err)
@@ -192,8 +193,76 @@ func TestBackupErrorExitCode1(t *testing.T) {
 	}
 }
 
+func TestForgetSnapshotSuccess(t *testing.T) {
+	runner, _, _, repoID := setup(t, stubRestic(t, 0))
+	op, err := runner.EnqueueForgetSnapshot(context.Background(), repoID, "abcdef12")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if op.Type != "forget" {
+		t.Fatalf("type = %q, want forget", op.Type)
+	}
+	final := waitForStatus(t, runner, op.ID)
+	if final.Status != "success" {
+		t.Fatalf("status = %q, want success", final.Status)
+	}
+
+	logs, _ := runner.GetLogs(context.Background(), op.ID)
+	joined := ""
+	for _, l := range logs {
+		joined += l.Message + "\n"
+	}
+	if !strings.Contains(joined, "Forgetting snapshot abcdef12") {
+		t.Fatalf("missing intro line in:\n%s", joined)
+	}
+	// Exactly `forget <id>` — forget must never imply --prune.
+	if !strings.Contains(joined, "ARGS: forget abcdef12") {
+		t.Fatalf("unexpected restic args in:\n%s", joined)
+	}
+}
+
+func TestForgetSnapshotRejectsInvalidID(t *testing.T) {
+	runner, _, _, repoID := setup(t, "/bin/true")
+	for _, id := range []string{"", "--prune", "latest", "abcdef12; rm -rf /", "short"} {
+		if _, err := runner.EnqueueForgetSnapshot(context.Background(), repoID, id); err == nil {
+			t.Errorf("id %q: expected error", id)
+		}
+	}
+	// No operation rows may have been created.
+	list, err := runner.ListOperations(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 0 {
+		t.Fatalf("expected no operations, got %d", len(list))
+	}
+}
+
+func TestPruneSuccess(t *testing.T) {
+	runner, _, _, repoID := setup(t, stubRestic(t, 0))
+	op, err := runner.EnqueuePrune(context.Background(), repoID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if op.Type != "prune" {
+		t.Fatalf("type = %q, want prune", op.Type)
+	}
+	final := waitForStatus(t, runner, op.ID)
+	if final.Status != "success" {
+		t.Fatalf("status = %q, want success", final.Status)
+	}
+	logs, _ := runner.GetLogs(context.Background(), op.ID)
+	joined := ""
+	for _, l := range logs {
+		joined += l.Message + "\n"
+	}
+	if !strings.Contains(joined, "ARGS: prune") {
+		t.Fatalf("unexpected restic args in:\n%s", joined)
+	}
+}
+
 func TestResumeInterrupted(t *testing.T) {
-	runner, _, _ := setup(t, "/bin/true")
+	runner, _, _, _ := setup(t, "/bin/true")
 	// Simulate an op left running by a crashed process.
 	_, err := runner.st.DB.Exec(`
 		INSERT INTO operations (type, status, created_at) VALUES ('backup', 'running', ?)`,

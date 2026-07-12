@@ -102,6 +102,7 @@ and Docker Hub (jonnyczi/restic-ui) on `main` and version tags.
 | ---------------------- | ---------- | ------------------------------------------------------ |
 | `PORT`                 | `8080`     | HTTP listen port.                                      |
 | `DATA_DIR`             | `/config`* | SQLite DB + generated master key.                      |
+| `RESTIC_CACHE_DIR`     | `DATA_DIR/cache` | restic's repository metadata cache (persists with `/config`). |
 | `PUID` / `PGID`        | `1000`     | Runtime user/group (Docker only).                      |
 | `RESTIC_UI_KEY`        | —          | Master key for encrypting stored credentials. Supports `RESTIC_UI_KEY_FILE`. Generated + saved under `DATA_DIR` if unset. |
 | `AUTH_DISABLED`        | `false`    | Disable built-in login (only behind a trusted proxy).  |
@@ -110,3 +111,7 @@ and Docker Hub (jonnyczi/restic-ui) on `main` and version tags.
 | `RCLONE_BINARY`        | `rclone`   | Override the rclone executable path.                   |
 
 \* Defaults to `./data` when run outside the container.
+
+SFTP host keys are trusted on first use and persisted at
+`DATA_DIR/ssh/known_hosts`, so they survive container recreation; a later
+host key change is rejected.

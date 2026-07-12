@@ -343,6 +343,18 @@ func (s *Service) writeCredFile(id int64, name, content string) (string, error) 
 	return path, nil
 }
 
+// knownHostsPath ensures DATA_DIR/ssh exists and returns the shared
+// known_hosts file used by all SFTP repositories. ssh creates the file on
+// first accept-new, but not its directory — and the container user has no
+// home to fall back to.
+func (s *Service) knownHostsPath() (string, error) {
+	dir := filepath.Join(s.dataDir, "ssh")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "known_hosts"), nil
+}
+
 // BuildRepoConfig assembles a runnable restic.RepoConfig for the repo,
 // decrypting credentials and materializing key/config files where needed.
 func (s *Service) BuildRepoConfig(ctx context.Context, id int64) (*Repo, restic.RepoConfig, error) {
@@ -384,12 +396,19 @@ func (s *Service) BuildRepoConfig(ctx context.Context, id int64) (*Repo, restic.
 		// URL path: "/dir" is relative to the login home, "//dir" is absolute.
 		// Prefixing one "/" to the user's value yields exactly that mapping.
 		rc.Repository = fmt.Sprintf("sftp://%s@%s:%d/%s", c.User, c.Host, port, c.Path)
+		knownHosts, err := s.knownHostsPath()
+		if err != nil {
+			return nil, restic.RepoConfig{}, err
+		}
+		// Note: restic splits sftp.command on spaces, so none of these
+		// values (incl. dataDir-derived paths) may contain spaces.
 		sshArgs := []string{
 			"ssh", c.Host,
 			"-l", c.User,
 			"-p", fmt.Sprint(port),
 			// First connection records the host key; later mismatches still fail.
 			"-o", "StrictHostKeyChecking=accept-new",
+			"-o", "UserKnownHostsFile=" + knownHosts,
 			"-o", "BatchMode=yes",
 		}
 		if secrets.PrivateKey != "" {

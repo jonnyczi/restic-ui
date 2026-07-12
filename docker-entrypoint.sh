@@ -28,5 +28,12 @@ fi
 mkdir -p "$DATA_DIR"
 chown -R abc:abc "$DATA_DIR" 2>/dev/null || true
 
+# The runtime user has no real home; point it at the persistent data dir so
+# subprocesses (ssh, rclone) get a writable HOME. This must go through the
+# passwd entry — su-exec resets HOME to it, discarding any exported value.
+if [ "$(getent passwd abc | cut -d: -f6)" != "$DATA_DIR" ]; then
+    usermod -d "$DATA_DIR" abc
+fi
+
 echo "restic-ui: starting as uid=$PUID gid=$PGID (data_dir=$DATA_DIR)"
 exec su-exec abc:abc "$@"

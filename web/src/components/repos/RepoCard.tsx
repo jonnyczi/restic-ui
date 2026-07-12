@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Copy,
   Database,
+  Eraser,
   Loader2,
   PlugZap,
   Trash2,
@@ -15,7 +16,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
 import SnapshotBrowser from "@/components/repos/SnapshotBrowser";
-import { useDeleteRepo, useRepoAction, useRepos, useRepoStats, useSnapshots } from "@/hooks/useRepos";
+import {
+  useDeleteRepo,
+  useForgetSnapshot,
+  usePruneRepo,
+  useRepoAction,
+  useRepos,
+  useRepoStats,
+  useSnapshots,
+} from "@/hooks/useRepos";
 import { api, ApiError } from "@/lib/api";
 import { formatBytes, type Repo } from "@/lib/types";
 
@@ -40,12 +49,16 @@ export default function RepoCard({ repo }: { repo: Repo }) {
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmPrune, setConfirmPrune] = useState(false);
+  const [confirmForget, setConfirmForget] = useState<string | null>(null);
   const [showSnapshots, setShowSnapshots] = useState(false);
   const [browsingSnap, setBrowsingSnap] = useState<string | null>(null);
   const [copyDest, setCopyDest] = useState<number | "">("");
 
   const action = useRepoAction();
   const del = useDeleteRepo();
+  const forget = useForgetSnapshot();
+  const prune = usePruneRepo();
   const snapshots = useSnapshots(showSnapshots ? repo.id : null);
   const stats = useRepoStats(showSnapshots ? repo.id : null);
   const { data: allRepos } = useRepos();
@@ -130,6 +143,42 @@ export default function RepoCard({ repo }: { repo: Repo }) {
           {btn("init", "Init", "Repository initialized.", <Database />)}
           {btn("check", "Check", "Integrity check passed.", <CheckCircle2 />)}
           {btn("unlock", "Unlock", "Stale locks removed.", <Unlock />)}
+          {confirmPrune ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">
+                Delete unreferenced data? Long-running; locks the repo.
+              </span>
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={prune.isPending}
+                onClick={async () => {
+                  try {
+                    await prune.mutateAsync(repo.id);
+                    setFeedback({ kind: "ok", text: "Prune started — see the Operations page." });
+                  } catch (err) {
+                    setFeedback({
+                      kind: "err",
+                      text: err instanceof ApiError ? err.message : "Request failed",
+                    });
+                  } finally {
+                    setConfirmPrune(false);
+                  }
+                }}
+              >
+                {prune.isPending ? <Loader2 className="animate-spin" /> : null}
+                Prune
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setConfirmPrune(false)}>
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <Button size="sm" variant="outline" onClick={() => setConfirmPrune(true)}>
+              <Eraser />
+              Prune
+            </Button>
+          )}
           <Button size="sm" variant="outline" onClick={() => setShowSnapshots((v) => !v)}>
             <Camera />
             Snapshots
@@ -178,6 +227,7 @@ export default function RepoCard({ repo }: { repo: Repo }) {
                       <th className="pb-1 pr-4 font-medium">Time</th>
                       <th className="pb-1 pr-4 font-medium">Host</th>
                       <th className="pb-1 font-medium">Paths</th>
+                      <th className="pb-1"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -192,6 +242,51 @@ export default function RepoCard({ repo }: { repo: Repo }) {
                         <td className="py-1.5 pr-4">{new Date(s.time).toLocaleString()}</td>
                         <td className="py-1.5 pr-4">{s.hostname}</td>
                         <td className="py-1.5 font-mono text-xs">{s.paths.join(", ")}</td>
+                        <td className="py-1.5 text-right" onClick={(e) => e.stopPropagation()}>
+                          {confirmForget === s.id ? (
+                            <span className="flex items-center justify-end gap-2 whitespace-nowrap">
+                              <span className="text-xs text-muted-foreground">
+                                Forget? Data kept until prune.
+                              </span>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                disabled={forget.isPending}
+                                onClick={async () => {
+                                  try {
+                                    await forget.mutateAsync({ repoId: repo.id, snapshotId: s.id });
+                                    setFeedback({
+                                      kind: "ok",
+                                      text: "Forget started — see the Operations page.",
+                                    });
+                                  } catch (err) {
+                                    setFeedback({
+                                      kind: "err",
+                                      text: err instanceof ApiError ? err.message : "Request failed",
+                                    });
+                                  } finally {
+                                    setConfirmForget(null);
+                                  }
+                                }}
+                              >
+                                {forget.isPending ? <Loader2 className="animate-spin" /> : null}
+                                Forget
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => setConfirmForget(null)}>
+                                Cancel
+                              </Button>
+                            </span>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              aria-label={`Forget snapshot ${s.short_id}`}
+                              onClick={() => setConfirmForget(s.id)}
+                            >
+                              <Trash2 />
+                            </Button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

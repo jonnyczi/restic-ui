@@ -52,6 +52,9 @@ type RepoConfig struct {
 type Runner struct {
 	// Bin is the restic executable (path or PATH name).
 	Bin string
+	// CacheDir, when set, is exported as RESTIC_CACHE_DIR so restic never
+	// falls back to $HOME/.cache/restic (the container user has no home).
+	CacheDir string
 }
 
 // Error carries restic's exit code and captured stderr for classification.
@@ -92,6 +95,9 @@ func (r *Runner) Command(ctx context.Context, repo RepoConfig, args ...string) *
 		"RESTIC_REPOSITORY="+repo.Repository,
 		"RESTIC_PASSWORD="+repo.Password,
 	)
+	if r.CacheDir != "" {
+		cmd.Env = append(cmd.Env, "RESTIC_CACHE_DIR="+r.CacheDir)
+	}
 	cmd.Env = append(cmd.Env, repo.Env...)
 	return cmd
 }

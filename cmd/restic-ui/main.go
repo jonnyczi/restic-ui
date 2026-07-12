@@ -38,6 +38,9 @@ func run() error {
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return fmt.Errorf("create data dir %q: %w", cfg.DataDir, err)
 	}
+	if err := os.MkdirAll(cfg.CacheDir, 0o700); err != nil {
+		return fmt.Errorf("create cache dir %q: %w", cfg.CacheDir, err)
+	}
 
 	st, err := store.Open(cfg.DataDir)
 	if err != nil {

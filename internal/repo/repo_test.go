@@ -2,6 +2,10 @@ package repo
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -94,10 +98,19 @@ func TestBuildRepoConfigLocations(t *testing.T) {
 	ctx := context.Background()
 	svc := newTestService(t)
 
+	knownHosts := filepath.Join(svc.dataDir, "ssh", "known_hosts")
+	sftpCommand := func(host, user, port string) string {
+		return "sftp.command=ssh " + host + " -l " + user + " -p " + port +
+			" -o StrictHostKeyChecking=accept-new" +
+			" -o UserKnownHostsFile=" + knownHosts +
+			" -o BatchMode=yes -s sftp"
+	}
+
 	cases := []struct {
-		name  string
-		input Input
-		want  string
+		name      string
+		input     Input
+		want      string
+		wantExtra []string
 	}{
 		{
 			name: "local",
@@ -116,13 +129,15 @@ func TestBuildRepoConfigLocations(t *testing.T) {
 			name: "sftp absolute path",
 			input: Input{Name: "sftp-abs", BackendType: restic.BackendSFTP, Password: "p",
 				Config: Config{Host: "nas.lan", User: "bk", Path: "/tank/restic"}},
-			want: "sftp://bk@nas.lan:22//tank/restic",
+			want:      "sftp://bk@nas.lan:22//tank/restic",
+			wantExtra: []string{"-o", sftpCommand("nas.lan", "bk", "22")},
 		},
 		{
 			name: "sftp relative path custom port",
 			input: Input{Name: "sftp-rel", BackendType: restic.BackendSFTP, Password: "p",
 				Config: Config{Host: "nas.lan", Port: 2222, User: "bk", Path: "restic"}},
-			want: "sftp://bk@nas.lan:2222/restic",
+			want:      "sftp://bk@nas.lan:2222/restic",
+			wantExtra: []string{"-o", sftpCommand("nas.lan", "bk", "2222")},
 		},
 		{
 			name: "rclone",
@@ -145,7 +160,54 @@ func TestBuildRepoConfigLocations(t *testing.T) {
 			if rc.Repository != tc.want {
 				t.Fatalf("repository = %q, want %q", rc.Repository, tc.want)
 			}
+			if !slices.Equal(rc.ExtraArgs, tc.wantExtra) {
+				t.Fatalf("ExtraArgs = %q, want %q", rc.ExtraArgs, tc.wantExtra)
+			}
 		})
+	}
+
+	// Key-less SFTP repos must still get the ssh dir created for known_hosts
+	// (the creds dir is only made when a private key is materialized).
+	if _, err := os.Stat(filepath.Join(svc.dataDir, "ssh")); err != nil {
+		t.Fatalf("ssh dir not created: %v", err)
+	}
+}
+
+func TestBuildRepoConfigSFTPWithKey(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestService(t)
+
+	created, err := svc.Create(ctx, Input{
+		Name: "sftp-key", BackendType: restic.BackendSFTP, Password: "p",
+		Config:  Config{Host: "nas.lan", User: "bk", Path: "/tank/restic"},
+		Secrets: Secrets{PrivateKey: "-----BEGIN OPENSSH PRIVATE KEY-----\nfake\n-----END OPENSSH PRIVATE KEY-----"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, rc, err := svc.BuildRepoConfig(ctx, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rc.ExtraArgs) != 2 {
+		t.Fatalf("ExtraArgs = %q", rc.ExtraArgs)
+	}
+	cmd := rc.ExtraArgs[1]
+	keyPath := filepath.Join(svc.dataDir, "creds", fmt.Sprintf("repo-%d-sshkey", created.ID))
+	for _, want := range []string{
+		"-i " + keyPath,
+		"-o UserKnownHostsFile=" + filepath.Join(svc.dataDir, "ssh", "known_hosts"),
+	} {
+		if !strings.Contains(cmd, want) {
+			t.Errorf("sftp.command missing %q: %q", want, cmd)
+		}
+	}
+	info, err := os.Stat(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("key file mode = %o, want 600", info.Mode().Perm())
 	}
 }
 

@@ -33,6 +33,7 @@ func (s *Server) repoRoutes(r chi.Router) {
 			r.Post("/test", s.handleRepoTest)
 			r.Post("/check", s.handleRepoCheck)
 			r.Post("/unlock", s.handleRepoUnlock)
+			r.Post("/prune", s.handleRepoPrune)
 			r.Get("/snapshots", s.handleRepoSnapshots)
 			r.Get("/stats", s.handleRepoStats)
 		})
@@ -185,6 +186,22 @@ func (s *Server) handleRepoCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"report": report})
+}
+
+// handleRepoPrune enqueues a background prune (long-running; locks the repo
+// for the duration), unlike check which runs synchronously.
+func (s *Server) handleRepoPrune(w http.ResponseWriter, r *http.Request) {
+	id, err := repoID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	op, err := s.ops.EnqueuePrune(r.Context(), id)
+	if err != nil {
+		writeRepoError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, op)
 }
 
 func (s *Server) handleRepoUnlock(w http.ResponseWriter, r *http.Request) {
