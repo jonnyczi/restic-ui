@@ -32,7 +32,10 @@ jobs:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
         with:
-          version: 11
+          # Exact pin (matches web/package.json packageManager): a bare "11"
+          # resolves to 11.12.0, which crashes the v6 self-installer
+          # (pnpm/action-setup#276).
+          version: 11.5.2
       - uses: actions/setup-node@v6
         with:
           node-version: 22
