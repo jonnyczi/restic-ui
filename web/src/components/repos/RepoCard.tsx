@@ -26,7 +26,7 @@ import {
   useSnapshots,
 } from "@/hooks/useRepos";
 import { api, ApiError } from "@/lib/api";
-import { formatBytes, type Repo } from "@/lib/types";
+import { formatBytes, formatWhen, type Repo } from "@/lib/types";
 
 /** One-line human summary of where a repo points. */
 function locationSummary(r: Repo): string {
@@ -114,12 +114,12 @@ export default function RepoCard({ repo }: { repo: Repo }) {
                 <span className="mr-2 rounded bg-secondary px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide">
                   {repo.backendType}
                 </span>
-                <span className="font-mono text-xs">{locationSummary(repo)}</span>
+                <span className="break-all font-mono text-xs">{locationSummary(repo)}</span>
               </div>
             </div>
           </div>
           {confirmDelete ? (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <span className="text-xs text-muted-foreground">
                 Remove config? Backup data stays on the backend.
               </span>
@@ -144,7 +144,7 @@ export default function RepoCard({ repo }: { repo: Repo }) {
           {btn("check", "Check", "Integrity check passed.", <CheckCircle2 />)}
           {btn("unlock", "Unlock", "Stale locks removed.", <Unlock />)}
           {confirmPrune ? (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-muted-foreground">
                 Delete unreferenced data? Long-running; locks the repo.
               </span>
@@ -220,77 +220,79 @@ export default function RepoCard({ repo }: { repo: Repo }) {
             )}
             {snapshots.data && snapshots.data.length > 0 && (
               <>
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs text-muted-foreground">
-                      <th className="pb-1 pr-4 font-medium">ID</th>
-                      <th className="pb-1 pr-4 font-medium">Time</th>
-                      <th className="pb-1 pr-4 font-medium">Host</th>
-                      <th className="pb-1 font-medium">Paths</th>
-                      <th className="pb-1"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {snapshots.data.map((s) => (
-                      <tr
-                        key={s.id}
-                        onClick={() => setBrowsingSnap(browsingSnap === s.id ? null : s.id)}
-                        className="cursor-pointer border-t border-border/50 hover:bg-accent/40"
-                        title="Click to browse this snapshot"
-                      >
-                        <td className="py-1.5 pr-4 font-mono text-xs">{s.short_id}</td>
-                        <td className="py-1.5 pr-4">{new Date(s.time).toLocaleString()}</td>
-                        <td className="py-1.5 pr-4">{s.hostname}</td>
-                        <td className="py-1.5 font-mono text-xs">{s.paths.join(", ")}</td>
-                        <td className="py-1.5 text-right" onClick={(e) => e.stopPropagation()}>
-                          {confirmForget === s.id ? (
-                            <span className="flex items-center justify-end gap-2 whitespace-nowrap">
-                              <span className="text-xs text-muted-foreground">
-                                Forget? Data kept until prune.
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs text-muted-foreground">
+                        <th className="pb-1 pr-4 font-medium">ID</th>
+                        <th className="pb-1 pr-4 font-medium">Time</th>
+                        <th className="hidden pb-1 pr-4 font-medium md:table-cell">Host</th>
+                        <th className="pb-1 font-medium">Paths</th>
+                        <th className="pb-1"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {snapshots.data.map((s) => (
+                        <tr
+                          key={s.id}
+                          onClick={() => setBrowsingSnap(browsingSnap === s.id ? null : s.id)}
+                          className="cursor-pointer border-t border-border/50 hover:bg-accent/40"
+                          title="Click to browse this snapshot"
+                        >
+                          <td className="py-1.5 pr-4 font-mono text-xs">{s.short_id}</td>
+                          <td className="py-1.5 pr-4">{formatWhen(s.time)}</td>
+                          <td className="hidden py-1.5 pr-4 md:table-cell">{s.hostname}</td>
+                          <td className="py-1.5 font-mono text-xs">{s.paths.join(", ")}</td>
+                          <td className="py-1.5 text-right" onClick={(e) => e.stopPropagation()}>
+                            {confirmForget === s.id ? (
+                              <span className="flex flex-wrap items-center justify-end gap-2">
+                                <span className="text-xs text-muted-foreground">
+                                  Forget? Data kept until prune.
+                                </span>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  disabled={forget.isPending}
+                                  onClick={async () => {
+                                    try {
+                                      await forget.mutateAsync({ repoId: repo.id, snapshotId: s.id });
+                                      setFeedback({
+                                        kind: "ok",
+                                        text: "Forget started — see the Operations page.",
+                                      });
+                                    } catch (err) {
+                                      setFeedback({
+                                        kind: "err",
+                                        text: err instanceof ApiError ? err.message : "Request failed",
+                                      });
+                                    } finally {
+                                      setConfirmForget(null);
+                                    }
+                                  }}
+                                >
+                                  {forget.isPending ? <Loader2 className="animate-spin" /> : null}
+                                  Forget
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => setConfirmForget(null)}>
+                                  Cancel
+                                </Button>
                               </span>
+                            ) : (
                               <Button
                                 size="sm"
-                                variant="destructive"
-                                disabled={forget.isPending}
-                                onClick={async () => {
-                                  try {
-                                    await forget.mutateAsync({ repoId: repo.id, snapshotId: s.id });
-                                    setFeedback({
-                                      kind: "ok",
-                                      text: "Forget started — see the Operations page.",
-                                    });
-                                  } catch (err) {
-                                    setFeedback({
-                                      kind: "err",
-                                      text: err instanceof ApiError ? err.message : "Request failed",
-                                    });
-                                  } finally {
-                                    setConfirmForget(null);
-                                  }
-                                }}
+                                variant="ghost"
+                                aria-label={`Forget snapshot ${s.short_id}`}
+                                onClick={() => setConfirmForget(s.id)}
                               >
-                                {forget.isPending ? <Loader2 className="animate-spin" /> : null}
-                                Forget
+                                <Trash2 />
                               </Button>
-                              <Button size="sm" variant="ghost" onClick={() => setConfirmForget(null)}>
-                                Cancel
-                              </Button>
-                            </span>
-                          ) : (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              aria-label={`Forget snapshot ${s.short_id}`}
-                              onClick={() => setConfirmForget(s.id)}
-                            >
-                              <Trash2 />
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
                 {browsingSnap && (
                   <div className="mt-2">
                     <SnapshotBrowser
@@ -301,7 +303,7 @@ export default function RepoCard({ repo }: { repo: Repo }) {
                   </div>
                 )}
                 {otherRepos.length > 0 && (
-                  <div className="mt-3 flex items-center gap-2 border-t border-border/50 pt-3">
+                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/50 pt-3">
                     <Copy className="size-4 text-muted-foreground" />
                     <span className="text-xs text-muted-foreground">Replicate all snapshots to</span>
                     <Select

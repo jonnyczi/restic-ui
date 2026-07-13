@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import PlanForm from "@/components/plans/PlanForm";
 import { useDeletePlan, usePlans, useRunPlan, useSetPlanEnabled } from "@/hooks/usePlans";
-import type { Plan } from "@/lib/types";
+import { formatWhen, type Plan } from "@/lib/types";
 
 function PlanCard({ plan, onEdit }: { plan: Plan; onEdit: () => void }) {
   const run = useRunPlan();
@@ -28,7 +28,7 @@ function PlanCard({ plan, onEdit }: { plan: Plan; onEdit: () => void }) {
                     <code className="text-xs">{plan.scheduleCron}</code>
                     {plan.nextRun && (
                       <span className="text-xs">
-                        (next: {new Date(plan.nextRun).toLocaleString()})
+                        (next: {formatWhen(plan.nextRun)})
                       </span>
                     )}
                   </>
@@ -116,7 +116,7 @@ export default function PlansPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Backup plans</h1>
           <p className="text-sm text-muted-foreground">

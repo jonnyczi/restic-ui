@@ -205,3 +205,8 @@ export function formatBytes(n: number): string {
   }
   return `${v < 10 && i > 0 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
 }
+
+/** Compact locale timestamp for table cells, e.g. "7/12/26, 3:04 PM". */
+export function formatWhen(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+}
