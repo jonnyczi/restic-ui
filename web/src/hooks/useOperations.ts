@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { LogLine, Operation, OpProgress, StreamEvent } from "@/lib/types";
 
@@ -7,6 +7,39 @@ export function useOperations(limit = 100) {
   return useQuery({
     queryKey: ["operations"],
     queryFn: () => api.get<Operation[]>(`/api/operations?limit=${limit}`),
+  });
+}
+
+export interface OpHistoryFilters {
+  type?: string;
+  status?: string;
+  repoId?: number;
+  planId?: number;
+}
+
+const PAGE_SIZE = 50;
+
+/**
+ * Filtered + "load more" operation history for the Operations page. Kept as
+ * a separate query key from `useOperations()` so this page's filtering and
+ * cursor pagination can't disturb the live WebSocket-fed cache that the
+ * Dashboard and PlanCard rely on for real-time status.
+ */
+export function useFilteredOperations(filters: OpHistoryFilters) {
+  return useInfiniteQuery({
+    queryKey: ["operations", "filtered", filters],
+    queryFn: ({ pageParam }: { pageParam: number | undefined }) => {
+      const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
+      if (filters.type) params.set("type", filters.type);
+      if (filters.status) params.set("status", filters.status);
+      if (filters.repoId) params.set("repoId", String(filters.repoId));
+      if (filters.planId) params.set("planId", String(filters.planId));
+      if (pageParam) params.set("beforeId", String(pageParam));
+      return api.get<Operation[]>(`/api/operations?${params}`);
+    },
+    initialPageParam: undefined as number | undefined,
+    getNextPageParam: (lastPage) =>
+      lastPage.length < PAGE_SIZE ? undefined : lastPage[lastPage.length - 1].id,
   });
 }
 
@@ -71,6 +104,33 @@ export function useEventStream(enabled: boolean) {
               }
               return [op, ...old];
             });
+            // Patch the same operation wherever it's already loaded in the
+            // Operations page's filtered/paginated cache. A row this event
+            // doesn't match anywhere is either filtered out or brand new
+            // (e.g. a scheduled run created with no user navigation to
+            // trigger a refetch) — either way, refetch so it shows up if it
+            // belongs.
+            let matchedAnywhere = false;
+            qc.setQueriesData<InfiniteData<Operation[], number | undefined>>(
+              { queryKey: ["operations", "filtered"] },
+              (old) => {
+                if (!old) return old;
+                let changed = false;
+                const pages = old.pages.map((page) => {
+                  const i = page.findIndex((o) => o.id === op.id);
+                  if (i < 0) return page;
+                  changed = true;
+                  matchedAnywhere = true;
+                  const next = page.slice();
+                  next[i] = op;
+                  return next;
+                });
+                return changed ? { ...old, pages } : old;
+              },
+            );
+            if (!matchedAnywhere) {
+              qc.invalidateQueries({ queryKey: ["operations", "filtered"] });
+            }
             if (op.status !== "running" && op.status !== "queued") {
               // Completed: snapshot lists and plan next-runs may have changed.
               qc.invalidateQueries({ queryKey: ["snapshots"] });

@@ -1,8 +1,18 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Download, File, Folder, FolderInput, Loader2, X } from "lucide-react";
+import {
+  Download,
+  File,
+  Folder,
+  FolderInput,
+  FolderOutput,
+  FolderSearch,
+  Loader2,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import DirBrowser from "@/components/plans/DirBrowser";
 import { api, ApiError } from "@/lib/api";
 import { formatBytes, formatWhen, type LsNode } from "@/lib/types";
 
@@ -19,7 +29,10 @@ export default function SnapshotBrowser({
   const [path, setPath] = useState("/");
   const [restoring, setRestoring] = useState<LsNode | null>(null);
   const [target, setTarget] = useState("/restore");
+  const [pickingTarget, setPickingTarget] = useState(false);
   const [notice, setNotice] = useState("");
+
+  const WHOLE_SNAPSHOT: LsNode = { name: snapshotId.slice(0, 8), type: "dir", path: "", size: 0, mtime: "" };
 
   const ls = useQuery({
     queryKey: ["snap-ls", repoId, snapshotId, path],
@@ -56,7 +69,7 @@ export default function SnapshotBrowser({
 
   return (
     <div className="rounded-md border bg-background p-3" data-testid="snapshot-browser">
-      <div className="mb-2 flex items-center justify-between gap-2">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1 text-xs">
           <span className="mr-1 rounded bg-secondary px-1.5 py-0.5 font-mono">
             {snapshotId.slice(0, 8)}
@@ -74,9 +87,19 @@ export default function SnapshotBrowser({
             </span>
           ))}
         </div>
-        <Button size="sm" variant="ghost" onClick={onClose} aria-label="Close browser">
-          <X />
-        </Button>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setRestoring(restoring?.path === "" ? null : WHOLE_SNAPSHOT)}
+          >
+            <FolderOutput />
+            Restore entire snapshot
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onClose} aria-label="Close browser">
+            <X />
+          </Button>
+        </div>
       </div>
 
       {ls.isLoading && (
@@ -149,19 +172,34 @@ export default function SnapshotBrowser({
       )}
 
       {restoring && (
-        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border p-2">
-          <span className="whitespace-nowrap text-xs text-muted-foreground">
-            Restore <code>{restoring.name}</code> to
-          </span>
-          <Input
-            value={target}
-            onChange={(e) => setTarget(e.target.value)}
-            className="h-8 w-auto min-w-40 flex-1 font-mono text-xs"
-          />
-          <Button size="sm" onClick={() => doRestore(restoring)} disabled={restore.isPending}>
-            {restore.isPending && <Loader2 className="animate-spin" />}
-            Restore
-          </Button>
+        <div className="mt-2 space-y-2 rounded-md border p-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="whitespace-nowrap text-xs text-muted-foreground">
+              Restore <code>{restoring.path === "" ? "entire snapshot" : restoring.name}</code> to
+            </span>
+            <Input
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              className="h-8 w-auto min-w-40 flex-1 font-mono text-xs"
+            />
+            <Button size="sm" variant="outline" onClick={() => setPickingTarget((v) => !v)}>
+              <FolderSearch />
+              Browse…
+            </Button>
+            <Button size="sm" onClick={() => doRestore(restoring)} disabled={restore.isPending}>
+              {restore.isPending && <Loader2 className="animate-spin" />}
+              Restore
+            </Button>
+          </div>
+          {pickingTarget && (
+            <DirBrowser
+              onSelect={(p) => {
+                setTarget(p);
+                setPickingTarget(false);
+              }}
+              onClose={() => setPickingTarget(false)}
+            />
+          )}
         </div>
       )}
 

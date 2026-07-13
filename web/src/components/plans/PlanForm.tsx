@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { FolderSearch, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,16 +9,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import DirBrowser from "@/components/plans/DirBrowser";
 import { useCreatePlan, useUpdatePlan } from "@/hooks/usePlans";
 import { useRepos } from "@/hooks/useRepos";
-import { ApiError } from "@/lib/api";
-import type { Plan, PlanInput, Retention } from "@/lib/types";
-
-const SCHEDULE_PRESETS = [
-  { label: "Manual only (no schedule)", value: "" },
-  { label: "Hourly", value: "0 * * * *" },
-  { label: "Daily at 02:00", value: "0 2 * * *" },
-  { label: "Weekly, Sunday 03:00", value: "0 3 * * 0" },
-  { label: "Custom cron…", value: "custom" },
-];
+import { api, ApiError } from "@/lib/api";
+import { humanizeCron, SCHEDULE_PRESETS } from "@/lib/cronHumanize";
+import { formatWhen, type ForgetGroup, type Plan, type PlanInput, type Retention } from "@/lib/types";
 
 /** Create/edit form for a backup plan. */
 export default function PlanForm({
@@ -51,8 +45,29 @@ export default function PlanForm({
   const [error, setError] = useState("");
   const [retention, setRetention] = useState<Retention>(existing?.retention ?? {});
   const [prune, setPrune] = useState(existing?.retention?.prune ?? true);
+  const [repoId, setRepoId] = useState<number | "">(existing?.repoId ?? "");
+  const [preview, setPreview] = useState<ForgetGroup[] | null>(null);
+
+  // Match the old native-select behavior: default to the first repo for new
+  // plans once the list loads, instead of forcing an explicit empty choice.
+  useEffect(() => {
+    if (!existing && repoId === "" && repos && repos.length > 0) {
+      setRepoId(repos[0].id);
+    }
+  }, [repos, existing, repoId]);
 
   const busy = create.isPending || update.isPending;
+  const hasRetention = Object.values(retention).some((v) => typeof v === "number" && v > 0);
+
+  const previewRetention = useMutation({
+    mutationFn: () =>
+      api.post<ForgetGroup[]>("/api/plans/retention-preview", {
+        repoId: Number(repoId),
+        sources,
+        retention: { ...retention, prune },
+      }),
+    onSuccess: setPreview,
+  });
 
   function addSource(path: string) {
     const p = path.trim();
@@ -63,16 +78,16 @@ export default function PlanForm({
     e.preventDefault();
     setError("");
     const f = new FormData(e.currentTarget);
-    const hasRetention = Object.values(retention).some((v) => typeof v === "number" && v > 0);
     const input: PlanInput = {
       name: (f.get("name") as string).trim(),
-      repoId: Number(f.get("repoId")),
+      repoId: Number(repoId),
       sources,
       excludes,
       tags,
       scheduleCron: preset === "custom" ? customCron.trim() : preset,
       retention: hasRetention ? { ...retention, prune } : {},
       enabled: f.get("enabled") === "on",
+      notifyMuted: f.get("notifyMuted") === "on",
     };
     try {
       if (existing) {
@@ -126,7 +141,13 @@ export default function PlanForm({
             </div>
             <div className="space-y-2">
               <Label htmlFor="repoId">Repository</Label>
-              <Select id="repoId" name="repoId" defaultValue={existing?.repoId} required>
+              <Select
+                id="repoId"
+                name="repoId"
+                value={repoId}
+                onChange={(e) => setRepoId(Number(e.target.value))}
+                required
+              >
                 {(repos ?? []).map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.name} ({r.backendType})
@@ -176,6 +197,11 @@ export default function PlanForm({
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="exclude">Exclude patterns</Label>
+              <p className="text-xs text-muted-foreground">
+                Shell-style globs: <code>*.tmp</code> matches any file ending in .tmp,{" "}
+                <code>**/cache</code> matches a "cache" folder at any depth, and a leading{" "}
+                <code>/</code> anchors the pattern to the source folder's root.
+              </p>
               {chipList(excludes, setExcludes)}
               <div className="flex gap-2">
                 <Input
@@ -243,12 +269,21 @@ export default function PlanForm({
                   placeholder="30 4 * * 1-5"
                   className="font-mono"
                 />
+                {customCron.trim() && (
+                  <p className="text-xs text-muted-foreground">{humanizeCron(customCron)}</p>
+                )}
               </div>
             )}
           </div>
 
           <div className="space-y-2 rounded-md border p-3">
             <Label>Retention — how many snapshots to keep (0 = ignore)</Label>
+            <p className="text-xs text-muted-foreground">
+              Each bucket keeps its most recent N matching snapshots — e.g. Daily=7 keeps one
+              snapshot for each of the last 7 days that had one, Weekly=4 the last 4 distinct
+              weeks. Buckets combine (a snapshot can count toward Daily and Weekly at once), and
+              anything outside every bucket is removed the next time this policy applies.
+            </p>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
               {(
                 [
@@ -288,17 +323,76 @@ export default function PlanForm({
             <p className="text-xs text-muted-foreground">
               Applied automatically after each successful backup of this plan.
             </p>
+            <div className="flex items-center gap-2 pt-1">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!hasRetention || !repoId || sources.length === 0 || previewRetention.isPending}
+                onClick={() => {
+                  setPreview(null);
+                  previewRetention.mutate();
+                }}
+              >
+                {previewRetention.isPending && <Loader2 className="animate-spin" />}
+                Preview what this would keep
+              </Button>
+              {previewRetention.isError && (
+                <span className="text-xs text-destructive">
+                  {previewRetention.error instanceof ApiError
+                    ? previewRetention.error.message
+                    : "Preview failed"}
+                </span>
+              )}
+            </div>
+            {preview && (
+              <div className="rounded-md border bg-background p-2 text-xs">
+                {(() => {
+                  const keep = preview.reduce((n, g) => n + g.keep.length, 0);
+                  const remove = preview.flatMap((g) => g.remove);
+                  return (
+                    <>
+                      <p className="text-muted-foreground">
+                        Would keep <b className="text-foreground">{keep}</b> snapshot
+                        {keep === 1 ? "" : "s"} and remove{" "}
+                        <b className="text-foreground">{remove.length}</b>.
+                      </p>
+                      {remove.length > 0 && (
+                        <ul className="mt-1 space-y-0.5 font-mono text-muted-foreground">
+                          {remove.map((s) => (
+                            <li key={s.id}>
+                              {s.short_id} — {formatWhen(s.time)}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
           </div>
 
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              name="enabled"
-              defaultChecked={existing?.enabled ?? true}
-              className="accent-primary"
-            />
-            Enabled
-          </label>
+          <div className="flex flex-wrap gap-6">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                name="enabled"
+                defaultChecked={existing?.enabled ?? true}
+                className="accent-primary"
+              />
+              Enabled
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                name="notifyMuted"
+                defaultChecked={existing?.notifyMuted ?? false}
+                className="accent-primary"
+              />
+              Mute notifications for this plan
+            </label>
+          </div>
 
           {error && (
             <p role="alert" className="text-sm text-destructive">

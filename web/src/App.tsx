@@ -8,6 +8,7 @@ import SettingsPage from "@/pages/SettingsPage";
 import RepositoriesPage from "@/pages/RepositoriesPage";
 import PlansPage from "@/pages/PlansPage";
 import OperationsPage from "@/pages/OperationsPage";
+import NotFoundPage from "@/pages/NotFoundPage";
 import AppShell from "@/components/AppShell";
 
 export default function App() {
@@ -42,7 +43,7 @@ export default function App() {
           <Route path="plans" element={<PlansPage />} />
           <Route path="operations" element={<OperationsPage />} />
           <Route path="settings" element={<SettingsPage />} />
-          <Route path="*" element={<DashboardPage />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

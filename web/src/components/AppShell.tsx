@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { HardDriveDownload, LogOut, Menu, X } from "lucide-react";
+import { HardDriveDownload, LogOut, Menu, Moon, Sun, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLogout } from "@/hooks/useAuth";
+import { useDarkMode } from "@/hooks/useDarkMode";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -16,6 +17,7 @@ const NAV = [
 /** Top-level chrome: header with nav + identity, routed content below. */
 export default function AppShell({ username }: { username?: string }) {
   const logout = useLogout();
+  const { dark, toggle: toggleDark } = useDarkMode();
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -50,12 +52,20 @@ export default function AppShell({ username }: { username?: string }) {
           <div className="flex items-center gap-3">
             {username && (
               <span
-                className="hidden text-sm text-muted-foreground md:inline"
+                className="hidden text-sm text-muted-foreground lg:inline"
                 data-testid="current-user"
               >
                 {username}
               </span>
             )}
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
+              onClick={toggleDark}
+            >
+              {dark ? <Sun /> : <Moon />}
+            </Button>
             <Button
               variant="ghost"
               size="sm"

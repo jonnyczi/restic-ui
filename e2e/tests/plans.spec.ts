@@ -39,7 +39,9 @@ test("create a plan via the directory browser", async () => {
 
 test("plan card shows the schedule and next run", async () => {
   const card = page.getByTestId("plan-docs-nightly");
-  await expect(card.getByText("0 2 * * *")).toBeVisible();
+  // Humanized text is shown; the raw cron expression is preserved as its tooltip.
+  await expect(card.getByText("Daily at 02:00")).toBeVisible();
+  await expect(card.getByText("Daily at 02:00")).toHaveAttribute("title", "0 2 * * *");
   await expect(card.getByText(/next:/)).toBeVisible();
 });
 

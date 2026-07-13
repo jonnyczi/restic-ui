@@ -229,7 +229,7 @@ func TestForgetSnapshotRejectsInvalidID(t *testing.T) {
 		}
 	}
 	// No operation rows may have been created.
-	list, err := runner.ListOperations(context.Background(), 10)
+	list, err := runner.ListOperations(context.Background(), OpFilter{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +273,7 @@ func TestResumeInterrupted(t *testing.T) {
 	if err := runner.ResumeInterrupted(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	list, err := runner.ListOperations(context.Background(), 10)
+	list, err := runner.ListOperations(context.Background(), OpFilter{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}

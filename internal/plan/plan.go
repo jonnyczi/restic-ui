@@ -71,6 +71,7 @@ type Plan struct {
 	ScheduleCron string    `json:"scheduleCron"` // empty = manual only
 	Retention    Retention `json:"retention"`
 	Enabled      bool      `json:"enabled"`
+	NotifyMuted  bool      `json:"notifyMuted"`
 	CreatedAt    string    `json:"createdAt"`
 	UpdatedAt    string    `json:"updatedAt"`
 }
@@ -85,6 +86,7 @@ type Input struct {
 	ScheduleCron string    `json:"scheduleCron"`
 	Retention    Retention `json:"retention"`
 	Enabled      bool      `json:"enabled"`
+	NotifyMuted  bool      `json:"notifyMuted"`
 }
 
 // Validate checks the input for completeness.
@@ -151,10 +153,10 @@ func (s *Service) Create(ctx context.Context, in Input) (*Plan, error) {
 	retJSON, _ := json.Marshal(in.Retention)
 	now := time.Now().UTC().Format(time.RFC3339)
 	res, err := s.st.DB.ExecContext(ctx, `
-		INSERT INTO plans (name, repo_id, sources_json, excludes_json, tags_json, schedule_cron, retention_json, enabled, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO plans (name, repo_id, sources_json, excludes_json, tags_json, schedule_cron, retention_json, enabled, notify_muted, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		in.Name, in.RepoID, marshalList(in.Sources), marshalList(in.Excludes),
-		marshalList(in.Tags), in.ScheduleCron, string(retJSON), boolToInt(in.Enabled), now, now,
+		marshalList(in.Tags), in.ScheduleCron, string(retJSON), boolToInt(in.Enabled), boolToInt(in.NotifyMuted), now, now,
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
@@ -177,10 +179,10 @@ func (s *Service) Update(ctx context.Context, id int64, in Input) (*Plan, error)
 	retJSON, _ := json.Marshal(in.Retention)
 	now := time.Now().UTC().Format(time.RFC3339)
 	res, err := s.st.DB.ExecContext(ctx, `
-		UPDATE plans SET name=?, repo_id=?, sources_json=?, excludes_json=?, tags_json=?, schedule_cron=?, retention_json=?, enabled=?, updated_at=?
+		UPDATE plans SET name=?, repo_id=?, sources_json=?, excludes_json=?, tags_json=?, schedule_cron=?, retention_json=?, enabled=?, notify_muted=?, updated_at=?
 		WHERE id=?`,
 		in.Name, in.RepoID, marshalList(in.Sources), marshalList(in.Excludes),
-		marshalList(in.Tags), in.ScheduleCron, string(retJSON), boolToInt(in.Enabled), now, id,
+		marshalList(in.Tags), in.ScheduleCron, string(retJSON), boolToInt(in.Enabled), boolToInt(in.NotifyMuted), now, id,
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "FOREIGN KEY") {
@@ -222,21 +224,22 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 
 const planSelect = `
 	SELECT p.id, p.name, p.repo_id, r.name, p.sources_json, p.excludes_json,
-	       p.tags_json, p.schedule_cron, p.retention_json, p.enabled, p.created_at, p.updated_at
+	       p.tags_json, p.schedule_cron, p.retention_json, p.enabled, p.notify_muted, p.created_at, p.updated_at
 	FROM plans p JOIN repos r ON r.id = p.repo_id`
 
 func scanPlan(row interface{ Scan(...any) error }) (*Plan, error) {
 	var (
 		p                                  Plan
 		sources, excludes, tags, retention string
-		enabled                            int
+		enabled, notifyMuted               int
 	)
 	err := row.Scan(&p.ID, &p.Name, &p.RepoID, &p.RepoName, &sources, &excludes,
-		&tags, &p.ScheduleCron, &retention, &enabled, &p.CreatedAt, &p.UpdatedAt)
+		&tags, &p.ScheduleCron, &retention, &enabled, &notifyMuted, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
 	p.Enabled = enabled != 0
+	p.NotifyMuted = notifyMuted != 0
 	if err := json.Unmarshal([]byte(sources), &p.Sources); err != nil {
 		return nil, err
 	}

@@ -155,6 +155,17 @@ type Stats struct {
 	SnapshotsCount int64 `json:"snapshots_count"`
 }
 
+// ForgetGroup is one entry of `restic forget --dry-run --json`: snapshots
+// sharing a host/paths/tags grouping, split into what a retention policy
+// would keep versus remove.
+type ForgetGroup struct {
+	Host   string     `json:"host"`
+	Paths  []string   `json:"paths"`
+	Tags   []string   `json:"tags"`
+	Keep   []Snapshot `json:"keep"`
+	Remove []Snapshot `json:"remove"`
+}
+
 // --- High-level operations ---
 
 // Init initializes a new repository.
@@ -261,4 +272,26 @@ func (r *Runner) DumpCommand(ctx context.Context, repo RepoConfig, snapshotID, p
 func (r *Runner) Unlock(ctx context.Context, repo RepoConfig) error {
 	_, err := r.Run(ctx, repo, "unlock")
 	return err
+}
+
+// ForgetDryRun reports which snapshots a `forget` policy would keep or
+// remove, without deleting anything. forgetArgs are the --keep-* / --path /
+// etc. flags (no "forget" or "--dry-run" prefix — those are added here).
+func (r *Runner) ForgetDryRun(ctx context.Context, repo RepoConfig, forgetArgs []string) ([]ForgetGroup, error) {
+	var groups []ForgetGroup
+	args := append([]string{"forget", "--dry-run"}, forgetArgs...)
+	if err := r.RunJSON(ctx, repo, &groups, args...); err != nil {
+		return nil, err
+	}
+	// restic omits "keep"/"remove" (JSON null) when nothing falls in that
+	// bucket — normalize to [] so callers never have to special-case null.
+	for i := range groups {
+		if groups[i].Keep == nil {
+			groups[i].Keep = []Snapshot{}
+		}
+		if groups[i].Remove == nil {
+			groups[i].Remove = []Snapshot{}
+		}
+	}
+	return groups, nil
 }
