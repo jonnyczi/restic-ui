@@ -16,7 +16,7 @@ export default function DirBrowser({
 
   return (
     <div className="rounded-md border bg-background p-3" data-testid="dir-browser">
-      <div className="mb-2 flex items-center justify-between gap-2">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <code className="truncate text-xs text-muted-foreground">{path}</code>
         <div className="flex shrink-0 gap-2">
           <Button

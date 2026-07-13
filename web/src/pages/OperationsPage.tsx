@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import StatusBadge from "@/components/StatusBadge";
 import { useOperations, useOpLogs, useOpProgress } from "@/hooks/useOperations";
 import { api } from "@/lib/api";
-import { formatBytes, type Operation } from "@/lib/types";
+import { formatBytes, formatWhen, type Operation } from "@/lib/types";
 
 function duration(op: Operation): string {
   if (!op.startedAt) return "—";
@@ -43,7 +43,7 @@ function OpDetail({ op }: { op: Operation }) {
       {running && progress && (
         <div className="space-y-1" data-testid="op-progress">
           <div className="flex justify-between text-xs text-muted-foreground">
-            <span>
+            <span className="min-w-0 break-all">
               {progress.filesDone}/{progress.totalFiles} files ·{" "}
               {formatBytes(progress.bytesDone)}/{formatBytes(progress.totalBytes)}
               {progress.currentFile && <> · {progress.currentFile}</>}
@@ -61,7 +61,7 @@ function OpDetail({ op }: { op: Operation }) {
 
       <div
         ref={scrollRef}
-        className="max-h-64 overflow-y-auto rounded bg-black/40 p-2 font-mono text-xs"
+        className="max-h-64 overflow-y-auto break-all rounded bg-black/40 p-2 font-mono text-xs"
         data-testid="op-logs"
       >
         {!logs && (
@@ -119,15 +119,15 @@ export default function OperationsPage() {
       )}
 
       {operations && operations.length > 0 && (
-        <div className="overflow-hidden rounded-lg border">
+        <div className="overflow-x-auto rounded-lg border">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-secondary/50 text-left text-xs text-muted-foreground">
                 <th className="w-8 p-2"></th>
-                <th className="p-2 font-medium">#</th>
+                <th className="hidden p-2 font-medium md:table-cell">#</th>
                 <th className="p-2 font-medium">Type</th>
-                <th className="p-2 font-medium">Plan</th>
-                <th className="p-2 font-medium">Repository</th>
+                <th className="hidden p-2 font-medium md:table-cell">Plan</th>
+                <th className="hidden p-2 font-medium md:table-cell">Repository</th>
                 <th className="p-2 font-medium">Status</th>
                 <th className="p-2 font-medium">Started</th>
                 <th className="p-2 font-medium">Duration</th>
@@ -145,15 +145,15 @@ export default function OperationsPage() {
                     <td className="p-2 text-muted-foreground">
                       {open === op.id ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
                     </td>
-                    <td className="p-2 text-muted-foreground">{op.id}</td>
+                    <td className="hidden p-2 text-muted-foreground md:table-cell">{op.id}</td>
                     <td className="p-2">{op.type}</td>
-                    <td className="p-2">{op.planName || "—"}</td>
-                    <td className="p-2">{op.repoName || "—"}</td>
+                    <td className="hidden p-2 md:table-cell">{op.planName || "—"}</td>
+                    <td className="hidden p-2 md:table-cell">{op.repoName || "—"}</td>
                     <td className="p-2">
                       <StatusBadge status={op.status} />
                     </td>
                     <td className="p-2 text-muted-foreground">
-                      {op.startedAt ? new Date(op.startedAt).toLocaleString() : "—"}
+                      {op.startedAt ? formatWhen(op.startedAt) : "—"}
                     </td>
                     <td className="p-2 text-muted-foreground">{duration(op)}</td>
                   </tr>

@@ -4,7 +4,7 @@ import { Activity, AlertTriangle, CalendarClock, Database, ListTodo, Loader2 } f
 import { Card, CardContent } from "@/components/ui/card";
 import StatusBadge from "@/components/StatusBadge";
 import { api } from "@/lib/api";
-import type { Dashboard } from "@/lib/types";
+import { formatWhen, type Dashboard } from "@/lib/types";
 
 function Tile({
   icon,
@@ -67,15 +67,15 @@ export default function DashboardPage() {
       </div>
 
       {data.plans.length > 0 && (
-        <div className="overflow-hidden rounded-lg border">
+        <div className="overflow-x-auto rounded-lg border">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-secondary/50 text-left text-xs text-muted-foreground">
                 <th className="p-2 font-medium">Plan</th>
-                <th className="p-2 font-medium">Repository</th>
+                <th className="hidden p-2 font-medium md:table-cell">Repository</th>
                 <th className="p-2 font-medium">Last run</th>
                 <th className="p-2 font-medium">Status</th>
-                <th className="p-2 font-medium">Next run</th>
+                <th className="hidden p-2 font-medium md:table-cell">Next run</th>
               </tr>
             </thead>
             <tbody>
@@ -94,16 +94,16 @@ export default function DashboardPage() {
                       </span>
                     )}
                   </td>
-                  <td className="p-2 text-muted-foreground">{p.repoName}</td>
+                  <td className="hidden p-2 text-muted-foreground md:table-cell">{p.repoName}</td>
                   <td className="p-2 text-muted-foreground">
-                    {p.lastRun ? new Date(p.lastRun).toLocaleString() : "never"}
+                    {p.lastRun ? formatWhen(p.lastRun) : "never"}
                   </td>
                   <td className="p-2">{p.lastStatus ? <StatusBadge status={p.lastStatus} /> : "—"}</td>
-                  <td className="p-2 text-muted-foreground">
+                  <td className="hidden p-2 text-muted-foreground md:table-cell">
                     {p.nextRun ? (
                       <span className="flex items-center gap-1">
                         <CalendarClock className="size-3.5" />
-                        {new Date(p.nextRun).toLocaleString()}
+                        {formatWhen(p.nextRun)}
                       </span>
                     ) : (
                       "manual"
@@ -119,7 +119,7 @@ export default function DashboardPage() {
       {data.recentOps.length > 0 && (
         <div>
           <h2 className="mb-2 text-sm font-medium text-muted-foreground">Recent activity</h2>
-          <div className="overflow-hidden rounded-lg border">
+          <div className="overflow-x-auto rounded-lg border">
             <table className="w-full text-sm">
               <tbody>
                 {data.recentOps.map((op) => (
@@ -130,7 +130,7 @@ export default function DashboardPage() {
                       <StatusBadge status={op.status} />
                     </td>
                     <td className="p-2 text-right text-muted-foreground">
-                      {op.startedAt ? new Date(op.startedAt).toLocaleString() : "—"}
+                      {op.startedAt ? formatWhen(op.startedAt) : "—"}
                     </td>
                   </tr>
                 ))}

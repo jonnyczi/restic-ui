@@ -139,12 +139,13 @@ export default function PlanForm({
           <div className="space-y-2">
             <Label>Source folders</Label>
             {chipList(sources, setSources)}
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Input
                 value={manualPath}
                 onChange={(e) => setManualPath(e.target.value)}
                 placeholder="/sources/photos"
                 data-testid="source-input"
+                className="w-auto min-w-40 flex-1"
               />
               <Button
                 type="button"

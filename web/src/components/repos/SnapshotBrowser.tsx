@@ -4,7 +4,7 @@ import { Download, File, Folder, FolderInput, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, ApiError } from "@/lib/api";
-import { formatBytes, type LsNode } from "@/lib/types";
+import { formatBytes, formatWhen, type LsNode } from "@/lib/types";
 
 /** Browse a snapshot's contents; download files/folders or restore them. */
 export default function SnapshotBrowser({
@@ -91,70 +91,72 @@ export default function SnapshotBrowser({
       )}
 
       {ls.data && (
-        <table className="w-full text-sm">
-          <tbody>
-            {ls.data.length === 0 && (
-              <tr>
-                <td className="p-2 text-muted-foreground">Empty directory.</td>
-              </tr>
-            )}
-            {ls.data.map((node) => (
-              <tr key={node.path} className="border-t border-border/40">
-                <td className="w-full py-1">
-                  {node.type === "dir" ? (
-                    <button
-                      type="button"
-                      onClick={() => setPath(node.path)}
-                      className="flex items-center gap-2 rounded px-1 py-0.5 hover:bg-accent"
-                    >
-                      <Folder className="size-4 text-primary" />
-                      {node.name}
-                    </button>
-                  ) : (
-                    <span className="flex items-center gap-2 px-1 py-0.5">
-                      <File className="size-4 text-muted-foreground" />
-                      {node.name}
-                    </span>
-                  )}
-                </td>
-                <td className="whitespace-nowrap px-2 py-1 text-xs text-muted-foreground">
-                  {node.type === "file" ? formatBytes(node.size) : ""}
-                </td>
-                <td className="whitespace-nowrap px-2 py-1 text-xs text-muted-foreground">
-                  {node.mtime ? new Date(node.mtime).toLocaleString() : ""}
-                </td>
-                <td className="whitespace-nowrap py-1">
-                  <div className="flex gap-1">
-                    <a href={dumpUrl(node)} download>
-                      <Button size="sm" variant="ghost" aria-label={`Download ${node.name}`}>
-                        <Download />
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <tbody>
+              {ls.data.length === 0 && (
+                <tr>
+                  <td className="p-2 text-muted-foreground">Empty directory.</td>
+                </tr>
+              )}
+              {ls.data.map((node) => (
+                <tr key={node.path} className="border-t border-border/40">
+                  <td className="w-full py-1">
+                    {node.type === "dir" ? (
+                      <button
+                        type="button"
+                        onClick={() => setPath(node.path)}
+                        className="flex items-center gap-2 rounded px-1 py-0.5 hover:bg-accent"
+                      >
+                        <Folder className="size-4 text-primary" />
+                        {node.name}
+                      </button>
+                    ) : (
+                      <span className="flex items-center gap-2 px-1 py-0.5">
+                        <File className="size-4 text-muted-foreground" />
+                        {node.name}
+                      </span>
+                    )}
+                  </td>
+                  <td className="whitespace-nowrap px-2 py-1 text-xs text-muted-foreground">
+                    {node.type === "file" ? formatBytes(node.size) : ""}
+                  </td>
+                  <td className="hidden whitespace-nowrap px-2 py-1 text-xs text-muted-foreground md:table-cell">
+                    {node.mtime ? formatWhen(node.mtime) : ""}
+                  </td>
+                  <td className="whitespace-nowrap py-1">
+                    <div className="flex gap-1">
+                      <a href={dumpUrl(node)} download>
+                        <Button size="sm" variant="ghost" aria-label={`Download ${node.name}`}>
+                          <Download />
+                        </Button>
+                      </a>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Restore ${node.name}`}
+                        onClick={() => setRestoring(restoring?.path === node.path ? null : node)}
+                      >
+                        <FolderInput />
                       </Button>
-                    </a>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      aria-label={`Restore ${node.name}`}
-                      onClick={() => setRestoring(restoring?.path === node.path ? null : node)}
-                    >
-                      <FolderInput />
-                    </Button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {restoring && (
-        <div className="mt-2 flex items-center gap-2 rounded-md border p-2">
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border p-2">
           <span className="whitespace-nowrap text-xs text-muted-foreground">
             Restore <code>{restoring.name}</code> to
           </span>
           <Input
             value={target}
             onChange={(e) => setTarget(e.target.value)}
-            className="h-8 font-mono text-xs"
+            className="h-8 w-auto min-w-40 flex-1 font-mono text-xs"
           />
           <Button size="sm" onClick={() => doRestore(restoring)} disabled={restore.isPending}>
             {restore.isPending && <Loader2 className="animate-spin" />}
