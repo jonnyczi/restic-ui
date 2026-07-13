@@ -405,12 +405,52 @@ func (r *Runner) GetOperation(ctx context.Context, id int64) (*Operation, error)
 	return op, err
 }
 
-// ListOperations returns recent operations, newest first.
-func (r *Runner) ListOperations(ctx context.Context, limit int) ([]Operation, error) {
+// OpFilter narrows ListOperations. Zero values mean "no filter" for that field.
+type OpFilter struct {
+	Type     string
+	Status   string
+	RepoID   int64
+	PlanID   int64
+	BeforeID int64 // only operations with id < BeforeID ("load more" cursor)
+	Limit    int
+}
+
+// ListOperations returns recent operations matching f, newest first.
+func (r *Runner) ListOperations(ctx context.Context, f OpFilter) ([]Operation, error) {
+	limit := f.Limit
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	rows, err := r.st.DB.QueryContext(ctx, opSelect+` ORDER BY o.id DESC LIMIT ?`, limit)
+	query := opSelect
+	var where []string
+	var args []any
+	if f.Type != "" {
+		where = append(where, "o.type=?")
+		args = append(args, f.Type)
+	}
+	if f.Status != "" {
+		where = append(where, "o.status=?")
+		args = append(args, f.Status)
+	}
+	if f.RepoID > 0 {
+		where = append(where, "o.repo_id=?")
+		args = append(args, f.RepoID)
+	}
+	if f.PlanID > 0 {
+		where = append(where, "o.plan_id=?")
+		args = append(args, f.PlanID)
+	}
+	if f.BeforeID > 0 {
+		where = append(where, "o.id<?")
+		args = append(args, f.BeforeID)
+	}
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
+	query += " ORDER BY o.id DESC LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := r.st.DB.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

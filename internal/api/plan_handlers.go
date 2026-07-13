@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -13,10 +14,14 @@ import (
 	"github.com/jonnyczi/restic-ui/internal/plan"
 )
 
+// retentionTimeout bounds the synchronous forget --dry-run preview call.
+const retentionTimeout = 2 * time.Minute
+
 func (s *Server) planRoutes(r chi.Router) {
 	r.Route("/plans", func(r chi.Router) {
 		r.Get("/", s.handlePlanList)
 		r.Post("/", s.handlePlanCreate)
+		r.Post("/retention-preview", s.handleRetentionPreview)
 		r.Route("/{id}", func(r chi.Router) {
 			r.Get("/", s.handlePlanGet)
 			r.Put("/", s.handlePlanUpdate)
@@ -174,6 +179,42 @@ func (s *Server) handlePlanRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, op)
+}
+
+// handleRetentionPreview reports which snapshots a retention policy would
+// keep or remove, without applying it. Takes the policy directly in the body
+// (rather than a saved plan id) so it works for plans still being edited.
+func (s *Server) handleRetentionPreview(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		RepoID    int64          `json:"repoId"`
+		Sources   []string       `json:"sources"`
+		Retention plan.Retention `json:"retention"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if body.Retention.Empty() {
+		writeError(w, http.StatusBadRequest, "no retention policy configured")
+		return
+	}
+	_, rc, err := s.repos.BuildRepoConfig(r.Context(), body.RepoID)
+	if err != nil {
+		writeRepoError(w, err)
+		return
+	}
+	args := body.Retention.Args()
+	for _, src := range body.Sources {
+		args = append(args, "--path", src)
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), retentionTimeout)
+	defer cancel()
+	groups, err := s.restic.ForgetDryRun(ctx, rc, args)
+	if err != nil {
+		writeRepoError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, groups)
 }
 
 // handlePlanForget applies the plan's retention policy immediately.

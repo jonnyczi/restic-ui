@@ -48,8 +48,8 @@ func NewServer(st *store.Store, cfg *config.Config, box *crypto.Box) *Server {
 		plans:  plan.NewService(st),
 		restic: &restic.Runner{Bin: cfg.ResticBinary, CacheDir: cfg.CacheDir},
 		hub:    ops.NewHub(),
-		notify: notify.NewService(st),
 	}
+	s.notify = notify.NewService(st, s.plans)
 	s.ops = ops.NewRunner(st, s.repos, s.plans, s.restic, s.hub)
 	s.ops.SetNotifier(s.notify)
 	s.scheduler = plan.NewScheduler(s.plans, func(planID int64) {

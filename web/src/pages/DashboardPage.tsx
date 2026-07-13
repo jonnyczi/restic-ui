@@ -60,8 +60,8 @@ export default function DashboardPage() {
         <Tile icon={<Activity className="size-5" />} label="Running now" value={data.runningOps} />
         <Tile
           icon={<AlertTriangle className="size-5" />}
-          label="Failures (24h)"
-          value={data.failed24h}
+          label="Issues (24h)"
+          value={data.issues24h}
           alert
         />
       </div>

@@ -1,17 +1,37 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CalendarClock, Loader2, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import PlanForm from "@/components/plans/PlanForm";
+import ProgressBar from "@/components/ops/ProgressBar";
 import { useDeletePlan, usePlans, useRunPlan, useSetPlanEnabled } from "@/hooks/usePlans";
+import { useOperations, useOpProgress } from "@/hooks/useOperations";
+import { humanizeCron } from "@/lib/cronHumanize";
 import { formatWhen, type Plan } from "@/lib/types";
 
 function PlanCard({ plan, onEdit }: { plan: Plan; onEdit: () => void }) {
   const run = useRunPlan();
   const del = useDeletePlan();
   const setEnabled = useSetPlanEnabled();
+  const { data: operations } = useOperations();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [started, setStarted] = useState(false);
+  const [runningOpId, setRunningOpId] = useState<number | null>(null);
+
+  const liveOp = operations?.find(
+    (o) => o.planId === plan.id && (o.status === "running" || o.status === "queued"),
+  );
+  const trackedOpId = liveOp?.id ?? runningOpId ?? null;
+  const { data: progress } = useOpProgress(trackedOpId ?? -1);
+
+  // Clear the optimistic id once the cache shows the op reached a terminal status.
+  useEffect(() => {
+    if (runningOpId == null) return;
+    const op = operations?.find((o) => o.id === runningOpId);
+    if (op && op.status !== "running" && op.status !== "queued") {
+      setRunningOpId(null);
+    }
+  }, [operations, runningOpId]);
 
   return (
     <Card data-testid={`plan-${plan.name}`} className={plan.enabled ? "" : "opacity-60"}>
@@ -25,7 +45,7 @@ function PlanCard({ plan, onEdit }: { plan: Plan; onEdit: () => void }) {
                 <CalendarClock className="size-3.5" />
                 {plan.scheduleCron ? (
                   <>
-                    <code className="text-xs">{plan.scheduleCron}</code>
+                    <span title={plan.scheduleCron}>{humanizeCron(plan.scheduleCron)}</span>
                     {plan.nextRun && (
                       <span className="text-xs">
                         (next: {formatWhen(plan.nextRun)})
@@ -91,19 +111,21 @@ function PlanCard({ plan, onEdit }: { plan: Plan; onEdit: () => void }) {
             disabled={run.isPending}
             onClick={async () => {
               setStarted(false);
-              await run.mutateAsync(plan.id);
+              const op = await run.mutateAsync(plan.id);
+              setRunningOpId(op.id);
               setStarted(true);
             }}
           >
             {run.isPending ? <Loader2 className="animate-spin" /> : <Play />}
             Run now
           </Button>
-          {started && (
+          {started && !trackedOpId && (
             <span role="status" className="text-sm text-green-500">
               Backup started — follow it on the Operations page.
             </span>
           )}
         </div>
+        {trackedOpId && <ProgressBar progress={progress} />}
       </CardContent>
     </Card>
   );

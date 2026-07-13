@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/jonnyczi/restic-ui/internal/ops"
+	"github.com/jonnyczi/restic-ui/internal/plan"
 	"github.com/jonnyczi/restic-ui/internal/store"
 )
 
@@ -35,12 +36,13 @@ type Settings struct {
 // Service loads settings and delivers notifications.
 type Service struct {
 	st     *store.Store
+	plans  *plan.Service
 	client *http.Client
 }
 
 // NewService constructs a Service.
-func NewService(st *store.Store) *Service {
-	return &Service{st: st, client: &http.Client{Timeout: 15 * time.Second}}
+func NewService(st *store.Store, plans *plan.Service) *Service {
+	return &Service{st: st, plans: plans, client: &http.Client{Timeout: 15 * time.Second}}
 }
 
 type settingsData struct {
@@ -137,6 +139,12 @@ func (s *Service) NotifyOp(op ops.Operation) {
 	cfg, err := s.Get(ctx)
 	if err != nil || cfg.AppriseAPIURL == "" {
 		return
+	}
+
+	if op.PlanID != nil {
+		if p, err := s.plans.Get(ctx, *op.PlanID); err == nil && p.NotifyMuted {
+			return
+		}
 	}
 
 	var kind string

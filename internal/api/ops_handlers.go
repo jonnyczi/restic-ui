@@ -26,8 +26,20 @@ func (s *Server) opsRoutes(r chi.Router) {
 }
 
 func (s *Server) handleOpsList(w http.ResponseWriter, r *http.Request) {
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	list, err := s.ops.ListOperations(r.Context(), limit)
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	repoID, _ := strconv.ParseInt(q.Get("repoId"), 10, 64)
+	planID, _ := strconv.ParseInt(q.Get("planId"), 10, 64)
+	beforeID, _ := strconv.ParseInt(q.Get("beforeId"), 10, 64)
+	filter := ops.OpFilter{
+		Type:     q.Get("type"),
+		Status:   q.Get("status"),
+		RepoID:   repoID,
+		PlanID:   planID,
+		BeforeID: beforeID,
+		Limit:    limit,
+	}
+	list, err := s.ops.ListOperations(r.Context(), filter)
 	if err != nil {
 		slog.Error("list operations", "err", err)
 		writeError(w, http.StatusInternalServerError, "database error")

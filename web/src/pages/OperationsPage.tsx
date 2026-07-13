@@ -2,10 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Loader2, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import StatusBadge from "@/components/StatusBadge";
-import { useOperations, useOpLogs, useOpProgress } from "@/hooks/useOperations";
+import ProgressBar from "@/components/ops/ProgressBar";
+import { useFilteredOperations, useOpLogs, useOpProgress, type OpHistoryFilters } from "@/hooks/useOperations";
+import { useRepos } from "@/hooks/useRepos";
+import { usePlans } from "@/hooks/usePlans";
 import { api } from "@/lib/api";
-import { formatBytes, formatWhen, type Operation } from "@/lib/types";
+import { formatWhen, type Operation } from "@/lib/types";
+
+const OP_TYPES = ["backup", "restore", "prune", "check", "copy", "init", "forget", "retention"];
+const OP_STATUSES = ["queued", "running", "success", "warning", "error", "canceled"];
 
 function duration(op: Operation): string {
   if (!op.startedAt) return "—";
@@ -40,24 +47,7 @@ function OpDetail({ op }: { op: Operation }) {
 
   return (
     <div className="space-y-2 border-t bg-background/50 p-3">
-      {running && progress && (
-        <div className="space-y-1" data-testid="op-progress">
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span className="min-w-0 break-all">
-              {progress.filesDone}/{progress.totalFiles} files ·{" "}
-              {formatBytes(progress.bytesDone)}/{formatBytes(progress.totalBytes)}
-              {progress.currentFile && <> · {progress.currentFile}</>}
-            </span>
-            <span>{Math.round(progress.percentDone * 100)}%</span>
-          </div>
-          <div className="h-1.5 overflow-hidden rounded bg-secondary">
-            <div
-              className="h-full bg-primary transition-all"
-              style={{ width: `${Math.round(progress.percentDone * 100)}%` }}
-            />
-          </div>
-        </div>
-      )}
+      {running && <ProgressBar progress={progress} />}
 
       <div
         ref={scrollRef}
@@ -91,8 +81,19 @@ function OpDetail({ op }: { op: Operation }) {
 }
 
 export default function OperationsPage() {
-  const { data: operations, isLoading } = useOperations();
+  const [filters, setFilters] = useState<OpHistoryFilters>({});
+  const { data: repos } = useRepos();
+  const { data: plans } = usePlans();
+  const {
+    data,
+    isLoading,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useFilteredOperations(filters);
   const [open, setOpen] = useState<number | null>(null);
+
+  const operations = data?.pages.flat() ?? [];
 
   return (
     <div className="space-y-6">
@@ -103,22 +104,88 @@ export default function OperationsPage() {
         </p>
       </div>
 
+      <div className="flex flex-wrap gap-2">
+        <Select
+          aria-label="Filter by type"
+          className="h-8 w-auto text-xs"
+          value={filters.type ?? ""}
+          onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value || undefined }))}
+        >
+          <option value="">All types</option>
+          {OP_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </Select>
+        <Select
+          aria-label="Filter by status"
+          className="h-8 w-auto text-xs"
+          value={filters.status ?? ""}
+          onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value || undefined }))}
+        >
+          <option value="">All statuses</option>
+          {OP_STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </Select>
+        <Select
+          aria-label="Filter by plan"
+          className="h-8 w-auto text-xs"
+          value={filters.planId ?? ""}
+          onChange={(e) =>
+            setFilters((f) => ({ ...f, planId: e.target.value ? Number(e.target.value) : undefined }))
+          }
+        >
+          <option value="">All plans</option>
+          {(plans ?? []).map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </Select>
+        <Select
+          aria-label="Filter by repository"
+          className="h-8 w-auto text-xs"
+          value={filters.repoId ?? ""}
+          onChange={(e) =>
+            setFilters((f) => ({ ...f, repoId: e.target.value ? Number(e.target.value) : undefined }))
+          }
+        >
+          <option value="">All repositories</option>
+          {(repos ?? []).map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.name}
+            </option>
+          ))}
+        </Select>
+        {(filters.type || filters.status || filters.planId || filters.repoId) && (
+          <Button size="sm" variant="ghost" onClick={() => setFilters({})}>
+            Clear filters
+          </Button>
+        )}
+      </div>
+
       {isLoading && (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Loading…
         </p>
       )}
 
-      {operations && operations.length === 0 && (
+      {!isLoading && operations.length === 0 && (
         <div className="rounded-lg border border-dashed p-12 text-center">
           <p className="font-medium">Nothing has run yet</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Run a backup plan and it will show up here.
+            {Object.keys(filters).length > 0
+              ? "No operations match these filters."
+              : "Run a backup plan and it will show up here."}
           </p>
         </div>
       )}
 
-      {operations && operations.length > 0 && (
+      {operations.length > 0 && (
         <div className="overflow-x-auto rounded-lg border">
           <table className="w-full text-sm">
             <thead>
@@ -168,6 +235,19 @@ export default function OperationsPage() {
               ))}
             </tbody>
           </table>
+          {hasNextPage && (
+            <div className="border-t p-2 text-center">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => fetchNextPage()}
+                disabled={isFetchingNextPage}
+              >
+                {isFetchingNextPage && <Loader2 className="animate-spin" />}
+                Load more
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>

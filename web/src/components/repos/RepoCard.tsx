@@ -185,6 +185,13 @@ export default function RepoCard({ repo }: { repo: Repo }) {
           </Button>
         </div>
 
+        <p className="text-xs text-muted-foreground">
+          <b className="font-medium text-foreground">Unlock</b> clears a stale lock left behind by
+          a crashed process — safe to run unless another operation on this repo is genuinely in
+          progress. <b className="font-medium text-foreground">Prune</b> reclaims space after
+          forgotten snapshots; it rewrites pack files, so it's long-running and best scheduled off-peak.
+        </p>
+
         {feedback && (
           <p
             role="status"

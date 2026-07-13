@@ -81,6 +81,7 @@ export interface Plan {
   scheduleCron: string;
   retention: Retention;
   enabled: boolean;
+  notifyMuted: boolean;
   nextRun?: string;
   createdAt: string;
   updatedAt: string;
@@ -95,6 +96,22 @@ export interface PlanInput {
   scheduleCron: string;
   retention: Retention;
   enabled: boolean;
+  notifyMuted: boolean;
+}
+
+export interface ForgetSnapshot {
+  id: string;
+  short_id: string;
+  time: string;
+  paths: string[];
+}
+
+export interface ForgetGroup {
+  host: string;
+  paths: string[];
+  tags: string[] | null;
+  keep: ForgetSnapshot[];
+  remove: ForgetSnapshot[];
 }
 
 export interface LsNode {
@@ -128,7 +145,7 @@ export interface Dashboard {
   repoCount: number;
   planCount: number;
   runningOps: number;
-  failed24h: number;
+  issues24h: number;
   plans: DashboardPlan[];
   recentOps: Operation[];
 }

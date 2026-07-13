@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/jonnyczi/restic-ui/internal/notify"
+	opsvc "github.com/jonnyczi/restic-ui/internal/ops"
 )
 
 func (s *Server) settingsRoutes(r chi.Router) {
@@ -72,7 +73,7 @@ type dashboardResponse struct {
 	RepoCount  int             `json:"repoCount"`
 	PlanCount  int             `json:"planCount"`
 	RunningOps int             `json:"runningOps"`
-	Failed24h  int             `json:"failed24h"`
+	Issues24h  int             `json:"issues24h"`
 	Plans      []dashboardPlan `json:"plans"`
 	RecentOps  []any           `json:"recentOps"`
 }
@@ -85,8 +86,8 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		(SELECT COUNT(*) FROM repos),
 		(SELECT COUNT(*) FROM plans),
 		(SELECT COUNT(*) FROM operations WHERE status IN ('running','queued')),
-		(SELECT COUNT(*) FROM operations WHERE status='error' AND ended_at > datetime('now','-1 day'))`)
-	if err := row.Scan(&resp.RepoCount, &resp.PlanCount, &resp.RunningOps, &resp.Failed24h); err != nil {
+		(SELECT COUNT(*) FROM operations WHERE status IN ('error','warning') AND ended_at > datetime('now','-1 day'))`)
+	if err := row.Scan(&resp.RepoCount, &resp.PlanCount, &resp.RunningOps, &resp.Issues24h); err != nil {
 		slog.Error("dashboard counts", "err", err)
 		writeError(w, http.StatusInternalServerError, "database error")
 		return
@@ -131,7 +132,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		resp.Plans = append(resp.Plans, dp)
 	}
 
-	ops, err := s.ops.ListOperations(ctx, 10)
+	ops, err := s.ops.ListOperations(ctx, opsvc.OpFilter{Limit: 10})
 	if err == nil {
 		for _, op := range ops {
 			resp.RecentOps = append(resp.RecentOps, op)
