@@ -279,6 +279,43 @@ func (s *Service) List(ctx context.Context) ([]Repo, error) {
 	return repos, rows.Err()
 }
 
+// StatsPoint is one recorded repo-stats measurement.
+type StatsPoint struct {
+	CapturedAt     string `json:"capturedAt"`
+	TotalSize      int64  `json:"totalSize"`
+	TotalFileCount int64  `json:"totalFileCount"`
+	SnapshotsCount int64  `json:"snapshotsCount"`
+}
+
+// StatsHistory returns up to limit most-recent stats points for a repo,
+// oldest first (chart-ready).
+func (s *Service) StatsHistory(ctx context.Context, id int64, limit int) ([]StatsPoint, error) {
+	if limit <= 0 || limit > 365 {
+		limit = 60
+	}
+	rows, err := s.st.DB.QueryContext(ctx, `
+		SELECT captured_at, total_size, total_file_count, snapshots_count
+		FROM repo_stats_history WHERE repo_id=?
+		ORDER BY id DESC LIMIT ?`, id, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	points := []StatsPoint{}
+	for rows.Next() {
+		var p StatsPoint
+		if err := rows.Scan(&p.CapturedAt, &p.TotalSize, &p.TotalFileCount, &p.SnapshotsCount); err != nil {
+			return nil, err
+		}
+		points = append(points, p)
+	}
+	// Reverse to ascending time for charting.
+	for i, j := 0, len(points)-1; i < j; i, j = i+1, j-1 {
+		points[i], points[j] = points[j], points[i]
+	}
+	return points, rows.Err()
+}
+
 // getFull loads a repo including decrypted secrets and password.
 func (s *Service) getFull(ctx context.Context, id int64) (*Repo, *Secrets, string, error) {
 	var (

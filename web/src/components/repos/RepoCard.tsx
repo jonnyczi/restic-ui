@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
 import SnapshotBrowser from "@/components/repos/SnapshotBrowser";
+import Sparkline from "@/components/Sparkline";
 import {
   useDeleteRepo,
   useForgetSnapshot,
@@ -23,6 +24,7 @@ import {
   useRepoAction,
   useRepos,
   useRepoStats,
+  useRepoStatsHistory,
   useSnapshots,
 } from "@/hooks/useRepos";
 import { api, ApiError } from "@/lib/api";
@@ -61,6 +63,7 @@ export default function RepoCard({ repo }: { repo: Repo }) {
   const prune = usePruneRepo();
   const snapshots = useSnapshots(showSnapshots ? repo.id : null);
   const stats = useRepoStats(showSnapshots ? repo.id : null);
+  const history = useRepoStatsHistory(showSnapshots ? repo.id : null);
   const { data: allRepos } = useRepos();
   const otherRepos = (allRepos ?? []).filter((r) => r.id !== repo.id);
 
@@ -207,10 +210,21 @@ export default function RepoCard({ repo }: { repo: Repo }) {
         {showSnapshots && (
           <div className="rounded-md border bg-background p-3">
             {stats.data && (
-              <p className="mb-2 text-xs text-muted-foreground">
-                {stats.data.snapshots_count} snapshot{stats.data.snapshots_count === 1 ? "" : "s"} ·{" "}
-                {stats.data.total_file_count} files · {formatBytes(stats.data.total_size)}
-              </p>
+              <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+                <p className="text-xs text-muted-foreground">
+                  {stats.data.snapshots_count} snapshot{stats.data.snapshots_count === 1 ? "" : "s"} ·{" "}
+                  {stats.data.total_file_count} files · {formatBytes(stats.data.total_size)}
+                </p>
+                {(history.data?.length ?? 0) >= 2 && (
+                  <div className="w-28" data-testid="repo-size-trend">
+                    <Sparkline
+                      points={history.data!.map((p) => p.totalSize)}
+                      height={20}
+                      ariaLabel={`${repo.name} size over ${history.data!.length} measurements`}
+                    />
+                  </div>
+                )}
+              </div>
             )}
             {snapshots.isLoading && (
               <p className="flex items-center gap-2 text-sm text-muted-foreground">

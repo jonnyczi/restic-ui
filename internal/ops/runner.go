@@ -334,7 +334,31 @@ func (r *Runner) runBackup(opID int64, p plan.Plan) (finalStatus string) {
 	} else {
 		r.setStatus(opID, `status=?, ended_at=?, exit_code=?`, status, now(), exitCode)
 	}
+	if status == "success" || status == "warning" {
+		r.captureRepoStats(p.RepoID, opID, rc, logger)
+	}
 	return status
+}
+
+// captureRepoStats records a repo-size history point after a size-changing
+// operation. Runs under the repo lock with its own timeout (the op's context
+// is already canceled by the time terminal status is written); failures only
+// warn — a missing data point never fails the operation.
+func (r *Runner) captureRepoStats(repoID, opID int64, rc restic.RepoConfig, logger *opLogger) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	st, err := r.restic.Stats(ctx, rc)
+	if err != nil {
+		logger.log("warn", "Could not record repository stats: "+err.Error())
+		return
+	}
+	_, err = r.st.DB.ExecContext(ctx, `
+		INSERT INTO repo_stats_history (repo_id, operation_id, captured_at, total_size, total_file_count, snapshots_count)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		repoID, opID, now(), st.TotalSize, st.TotalFileCount, st.SnapshotsCount)
+	if err != nil {
+		slog.Error("persist repo stats", "repo", repoID, "err", err)
+	}
 }
 
 func short(id string) string {

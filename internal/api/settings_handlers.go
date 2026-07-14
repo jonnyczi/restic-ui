@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -69,13 +70,34 @@ type dashboardPlan struct {
 	Overdue bool `json:"overdue"`
 }
 
+// growthPoint is one repo-size measurement for the dashboard sparklines.
+type growthPoint struct {
+	T    string `json:"t"`
+	Size int64  `json:"size"`
+}
+
+// repoGrowth is one repository's recent size history.
+type repoGrowth struct {
+	RepoID   int64         `json:"repoId"`
+	RepoName string        `json:"repoName"`
+	Points   []growthPoint `json:"points"`
+}
+
+// durationPoint is one completed backup's wall-clock duration.
+type durationPoint struct {
+	T       string  `json:"t"`
+	Seconds float64 `json:"seconds"`
+}
+
 type dashboardResponse struct {
-	RepoCount  int             `json:"repoCount"`
-	PlanCount  int             `json:"planCount"`
-	RunningOps int             `json:"runningOps"`
-	Issues24h  int             `json:"issues24h"`
-	Plans      []dashboardPlan `json:"plans"`
-	RecentOps  []any           `json:"recentOps"`
+	RepoCount     int                       `json:"repoCount"`
+	PlanCount     int                       `json:"planCount"`
+	RunningOps    int                       `json:"runningOps"`
+	Issues24h     int                       `json:"issues24h"`
+	Plans         []dashboardPlan           `json:"plans"`
+	RecentOps     []any                     `json:"recentOps"`
+	RepoGrowth    []repoGrowth              `json:"repoGrowth"`
+	PlanDurations map[int64][]durationPoint `json:"planDurations"`
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -138,6 +160,53 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			resp.RecentOps = append(resp.RecentOps, op)
 		}
 	}
+
+	resp.RepoGrowth = []repoGrowth{}
+	if repos, err := s.repos.List(ctx); err == nil {
+		for _, rp := range repos {
+			points, err := s.repos.StatsHistory(ctx, rp.ID, 30)
+			if err != nil || len(points) == 0 {
+				continue
+			}
+			g := repoGrowth{RepoID: rp.ID, RepoName: rp.Name, Points: make([]growthPoint, len(points))}
+			for i, p := range points {
+				g.Points[i] = growthPoint{T: p.CapturedAt, Size: p.TotalSize}
+			}
+			resp.RepoGrowth = append(resp.RepoGrowth, g)
+		}
+	}
+
+	resp.PlanDurations = map[int64][]durationPoint{}
+	rows, err := s.store.DB.QueryContext(ctx, `
+		SELECT plan_id, started_at, ended_at FROM operations
+		WHERE type='backup' AND status IN ('success','warning')
+		  AND plan_id IS NOT NULL AND started_at IS NOT NULL AND ended_at IS NOT NULL
+		ORDER BY id DESC LIMIT 300`)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var planID int64
+			var started, ended string
+			if rows.Scan(&planID, &started, &ended) != nil {
+				continue
+			}
+			st, err1 := time.Parse(time.RFC3339, started)
+			en, err2 := time.Parse(time.RFC3339, ended)
+			if err1 != nil || err2 != nil || len(resp.PlanDurations[planID]) >= 20 {
+				continue
+			}
+			resp.PlanDurations[planID] = append(resp.PlanDurations[planID],
+				durationPoint{T: ended, Seconds: en.Sub(st).Seconds()})
+		}
+		// Rows arrive newest-first; reverse each series to ascending time.
+		for id, pts := range resp.PlanDurations {
+			for i, j := 0, len(pts)-1; i < j; i, j = i+1, j-1 {
+				pts[i], pts[j] = pts[j], pts[i]
+			}
+			resp.PlanDurations[id] = pts
+		}
+	}
+
 	writeJSON(w, http.StatusOK, resp)
 }
 
