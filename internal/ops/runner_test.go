@@ -17,10 +17,15 @@ import (
 )
 
 // stubRestic writes an executable script that mimics `restic backup --json`
-// output, then exits with the given code.
+// output, then exits with the given code. A `stats` invocation (used by the
+// post-op history capture) always answers with fixed stats JSON.
 func stubRestic(t *testing.T, exitCode int) string {
 	t.Helper()
 	script := `#!/bin/sh
+if [ "$1" = "stats" ]; then
+  echo '{"total_size":2048,"total_file_count":10,"snapshots_count":1}'
+  exit 0
+fi
 echo "ARGS: $@"
 echo '{"message_type":"status","percent_done":0.5,"total_files":10,"files_done":5,"total_bytes":1000,"bytes_done":500}'
 echo '{"message_type":"summary","snapshot_id":"abcdef1234567890","files_new":8,"files_changed":1,"files_unmodified":1,"data_added":12345,"total_files_processed":10,"total_bytes_processed":1000,"total_duration":0.5}'
@@ -35,6 +40,18 @@ echo '{"message_type":"summary","snapshot_id":"abcdef1234567890","files_new":8,"
 		t.Fatal(err)
 	}
 	return path
+}
+
+// statsHistoryCount returns the number of captured history rows for a repo.
+func statsHistoryCount(t *testing.T, r *Runner, repoID int64) int {
+	t.Helper()
+	var n int
+	err := r.st.DB.QueryRow(
+		`SELECT COUNT(*) FROM repo_stats_history WHERE repo_id=?`, repoID).Scan(&n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
 }
 
 func setup(t *testing.T, resticBin string) (*Runner, *Hub, int64, int64) {
@@ -191,6 +208,67 @@ func TestBackupErrorExitCode1(t *testing.T) {
 	if !found {
 		t.Fatal("stderr not captured in logs")
 	}
+}
+
+func TestStatsHistoryCapture(t *testing.T) {
+	t.Run("backup success captures a point", func(t *testing.T) {
+		runner, _, planID, repoID := setup(t, stubRestic(t, 0))
+		op, _ := runner.EnqueueBackup(context.Background(), planID)
+		waitForStatus(t, runner, op.ID)
+		if n := statsHistoryCount(t, runner, repoID); n != 1 {
+			t.Fatalf("history rows = %d, want 1", n)
+		}
+		var size int64
+		var opID int64
+		err := runner.st.DB.QueryRow(
+			`SELECT total_size, operation_id FROM repo_stats_history WHERE repo_id=?`, repoID,
+		).Scan(&size, &opID)
+		if err != nil || size != 2048 || opID != op.ID {
+			t.Fatalf("row = size %d opID %d err %v, want 2048/%d/nil", size, opID, err, op.ID)
+		}
+	})
+
+	t.Run("backup warning still captures", func(t *testing.T) {
+		runner, _, planID, repoID := setup(t, stubRestic(t, 3))
+		op, _ := runner.EnqueueBackup(context.Background(), planID)
+		waitForStatus(t, runner, op.ID)
+		if n := statsHistoryCount(t, runner, repoID); n != 1 {
+			t.Fatalf("history rows = %d, want 1", n)
+		}
+	})
+
+	t.Run("backup error captures nothing", func(t *testing.T) {
+		runner, _, planID, repoID := setup(t, stubRestic(t, 1))
+		op, _ := runner.EnqueueBackup(context.Background(), planID)
+		waitForStatus(t, runner, op.ID)
+		if n := statsHistoryCount(t, runner, repoID); n != 0 {
+			t.Fatalf("history rows = %d, want 0", n)
+		}
+	})
+
+	t.Run("prune captures a point", func(t *testing.T) {
+		runner, _, _, repoID := setup(t, stubRestic(t, 0))
+		op, err := runner.EnqueuePrune(context.Background(), repoID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		waitForStatus(t, runner, op.ID)
+		if n := statsHistoryCount(t, runner, repoID); n != 1 {
+			t.Fatalf("history rows = %d, want 1", n)
+		}
+	})
+
+	t.Run("restore does not capture", func(t *testing.T) {
+		runner, _, _, repoID := setup(t, stubRestic(t, 0))
+		op, err := runner.EnqueueRestore(context.Background(), repoID, "abcdef12", "", "/tmp/out")
+		if err != nil {
+			t.Fatal(err)
+		}
+		waitForStatus(t, runner, op.ID)
+		if n := statsHistoryCount(t, runner, repoID); n != 0 {
+			t.Fatalf("history rows = %d, want 0", n)
+		}
+	})
 }
 
 func TestForgetSnapshotSuccess(t *testing.T) {

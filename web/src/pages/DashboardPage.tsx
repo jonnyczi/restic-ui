@@ -2,9 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Activity, AlertTriangle, CalendarClock, Database, ListTodo, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import Sparkline from "@/components/Sparkline";
 import StatusBadge from "@/components/StatusBadge";
 import { api } from "@/lib/api";
-import { formatWhen, type Dashboard } from "@/lib/types";
+import { formatBytes, formatWhen, type Dashboard } from "@/lib/types";
 
 function Tile({
   icon,
@@ -66,6 +67,40 @@ export default function DashboardPage() {
         />
       </div>
 
+      {data.repoGrowth.some((g) => g.points.length >= 2) && (
+        <div>
+          <h2 className="mb-2 text-sm font-medium text-muted-foreground">Repository growth</h2>
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4" data-testid="repo-growth">
+            {data.repoGrowth.map((g) => {
+              const latest = g.points[g.points.length - 1];
+              const delta = latest.size - g.points[0].size;
+              return (
+                <Card key={g.repoId}>
+                  <CardContent className="p-4">
+                    <div className="truncate text-xs text-muted-foreground">{g.repoName}</div>
+                    <div className="mt-0.5 flex items-baseline gap-2">
+                      <span className="font-semibold">{formatBytes(latest.size)}</span>
+                      {delta !== 0 && (
+                        <span className="text-xs text-muted-foreground">
+                          {delta > 0 ? "+" : "−"}
+                          {formatBytes(Math.abs(delta))}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-2">
+                      <Sparkline
+                        points={g.points.map((p) => p.size)}
+                        ariaLabel={`${g.repoName} size over ${g.points.length} measurements`}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {data.plans.length > 0 && (
         <div className="overflow-x-auto rounded-lg border">
           <table className="w-full text-sm">
@@ -76,6 +111,7 @@ export default function DashboardPage() {
                 <th className="p-2 font-medium">Last run</th>
                 <th className="p-2 font-medium">Status</th>
                 <th className="hidden p-2 font-medium md:table-cell">Next run</th>
+                <th className="hidden w-28 p-2 font-medium md:table-cell">Duration trend</th>
               </tr>
             </thead>
             <tbody>
@@ -107,6 +143,23 @@ export default function DashboardPage() {
                       </span>
                     ) : (
                       "manual"
+                    )}
+                  </td>
+                  <td className="hidden p-2 md:table-cell">
+                    {(data.planDurations[p.id]?.length ?? 0) >= 2 ? (
+                      <span
+                        title={`last backup took ${Math.round(
+                          data.planDurations[p.id][data.planDurations[p.id].length - 1].seconds,
+                        )}s`}
+                      >
+                        <Sparkline
+                          points={data.planDurations[p.id].map((d) => d.seconds)}
+                          height={20}
+                          ariaLabel={`${p.name} backup duration trend`}
+                        />
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
                     )}
                   </td>
                 </tr>

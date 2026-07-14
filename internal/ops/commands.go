@@ -148,13 +148,23 @@ func (r *Runner) enqueue(ctx context.Context, opType string, repoID int64, planI
 	}
 	r.hub.Publish(Event{Type: "op", Op: op})
 
-	go r.runCommand(opID, repoID, intro, args, rc)
+	go r.runCommand(opID, repoID, opType, intro, args, rc)
 	return op, nil
+}
+
+// statsCaptureTypes are the command op types that change repository size and
+// therefore record a stats-history point on success (backups capture in
+// runBackup; copy's op repo_id is already the destination repository).
+var statsCaptureTypes = map[string]bool{
+	"retention": true,
+	"forget":    true,
+	"prune":     true,
+	"copy":      true,
 }
 
 // runCommand executes a restic command under the repo lock, streaming every
 // output line into the operation log.
-func (r *Runner) runCommand(opID, repoID int64, intro string, args []string, preBuilt *restic.RepoConfig) {
+func (r *Runner) runCommand(opID, repoID int64, opType, intro string, args []string, preBuilt *restic.RepoConfig) {
 	lock := r.repoLock(repoID)
 	lock.Lock()
 	defer lock.Unlock()
@@ -228,6 +238,9 @@ func (r *Runner) runCommand(opID, repoID int64, intro string, args []string, pre
 		logger.log("error", fmt.Sprintf("restic exited with code %d", exitCode))
 	default:
 		logger.log("info", "Completed successfully.")
+	}
+	if status == "success" && statsCaptureTypes[opType] {
+		r.captureRepoStats(repoID, opID, rc, logger)
 	}
 	r.finish(opID, status, exitCode)
 }

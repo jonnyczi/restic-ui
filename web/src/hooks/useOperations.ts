@@ -181,6 +181,7 @@ export function useEventStream(enabled: boolean) {
               // Completed: snapshot lists and plan next-runs may have changed.
               qc.invalidateQueries({ queryKey: ["snapshots"] });
               qc.invalidateQueries({ queryKey: ["repo-stats"] });
+              qc.invalidateQueries({ queryKey: ["repo-stats-history"] });
               qc.invalidateQueries({ queryKey: ["plans"] });
             }
             break;

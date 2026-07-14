@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import type { Operation, Repo, RepoInput, RepoStats, Snapshot } from "@/lib/types";
+import type { Operation, Repo, RepoInput, RepoStats, RepoStatsPoint, Snapshot } from "@/lib/types";
 
 export function useRepos() {
   return useQuery({
@@ -61,6 +61,15 @@ export function useRepoStats(repoId: number | null) {
   return useQuery({
     queryKey: ["repo-stats", repoId],
     queryFn: () => api.get<RepoStats>(`/api/repos/${repoId}/stats`),
+    enabled: repoId !== null,
+    retry: 0,
+  });
+}
+
+export function useRepoStatsHistory(repoId: number | null) {
+  return useQuery({
+    queryKey: ["repo-stats-history", repoId],
+    queryFn: () => api.get<RepoStatsPoint[]>(`/api/repos/${repoId}/stats/history`),
     enabled: repoId !== null,
     retry: 0,
   });
