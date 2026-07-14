@@ -171,3 +171,19 @@ test("dashboard shows counts, plan status, and recent activity", async () => {
   await expect(page.getByText("Backup plans")).toBeVisible();
   await expect(page.getByText("Recent activity")).toBeVisible();
 });
+
+test("dashboard charts repo growth and backup duration trends", async () => {
+  // Three successful backups (+ retention/prune) have run against main-repo
+  // by now, so history points exist for both sparkline surfaces.
+  await expect(page.getByTestId("repo-growth")).toBeVisible();
+  await expect(page.getByTestId("repo-growth").locator("svg").first()).toBeVisible();
+  await expect(page.getByText("Duration trend")).toBeVisible();
+
+  // The repo card's snapshots panel shows its own size trend.
+  await page.getByRole("link", { name: "Repositories" }).click();
+  const repo = page.getByTestId("repo-main-repo");
+  await repo.getByRole("button", { name: "Snapshots" }).click();
+  await expect(repo.getByTestId("repo-size-trend").locator("svg")).toBeVisible({
+    timeout: 15_000,
+  });
+});

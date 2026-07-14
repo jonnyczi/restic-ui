@@ -141,6 +141,19 @@ export interface DashboardPlan {
   overdue: boolean;
 }
 
+export interface RepoStatsPoint {
+  capturedAt: string;
+  totalSize: number;
+  totalFileCount: number;
+  snapshotsCount: number;
+}
+
+export interface RepoGrowth {
+  repoId: number;
+  repoName: string;
+  points: { t: string; size: number }[];
+}
+
 export interface Dashboard {
   repoCount: number;
   planCount: number;
@@ -148,6 +161,8 @@ export interface Dashboard {
   issues24h: number;
   plans: DashboardPlan[];
   recentOps: Operation[];
+  repoGrowth: RepoGrowth[];
+  planDurations: Record<number, { t: string; seconds: number }[]>;
 }
 
 export type OpStatus = "queued" | "running" | "success" | "warning" | "error" | "canceled";

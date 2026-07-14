@@ -36,6 +36,7 @@ func (s *Server) repoRoutes(r chi.Router) {
 			r.Post("/prune", s.handleRepoPrune)
 			r.Get("/snapshots", s.handleRepoSnapshots)
 			r.Get("/stats", s.handleRepoStats)
+			r.Get("/stats/history", s.handleRepoStatsHistory)
 		})
 	})
 }
@@ -231,6 +232,26 @@ func (s *Server) handleRepoSnapshots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, snaps)
+}
+
+func (s *Server) handleRepoStatsHistory(w http.ResponseWriter, r *http.Request) {
+	id, err := repoID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if _, err := s.repos.Get(r.Context(), id); err != nil {
+		writeRepoError(w, err)
+		return
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	points, err := s.repos.StatsHistory(r.Context(), id, limit)
+	if err != nil {
+		slog.Error("stats history", "repo", id, "err", err)
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	writeJSON(w, http.StatusOK, points)
 }
 
 func (s *Server) handleRepoStats(w http.ResponseWriter, r *http.Request) {

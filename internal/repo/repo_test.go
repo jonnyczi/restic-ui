@@ -287,6 +287,52 @@ func TestUpdatePreservesSecretsWhenOmitted(t *testing.T) {
 	}
 }
 
+func TestStatsHistoryOrderLimitAndCascade(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestService(t)
+	created, err := svc.Create(ctx, Input{
+		Name: "hist", BackendType: restic.BackendLocal, Password: "p", Config: Config{Path: "/x"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 1; i <= 5; i++ {
+		_, err := svc.st.DB.Exec(`
+			INSERT INTO repo_stats_history (repo_id, captured_at, total_size, total_file_count, snapshots_count)
+			VALUES (?, ?, ?, ?, ?)`,
+			created.ID, fmt.Sprintf("2026-07-1%dT00:00:00Z", i), int64(i*100), int64(i), int64(i))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	points, err := svc.StatsHistory(ctx, created.ID, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(points) != 3 {
+		t.Fatalf("len = %d, want 3", len(points))
+	}
+	// Most recent 3, returned ascending: sizes 300, 400, 500.
+	if points[0].TotalSize != 300 || points[2].TotalSize != 500 {
+		t.Fatalf("order wrong: first=%d last=%d", points[0].TotalSize, points[2].TotalSize)
+	}
+
+	// Deleting the repo cascades its history away.
+	if err := svc.Delete(ctx, created.ID); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := svc.st.DB.QueryRow(
+		`SELECT COUNT(*) FROM repo_stats_history WHERE repo_id=?`, created.ID).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("history rows after delete = %d, want 0", n)
+	}
+}
+
 func TestDelete(t *testing.T) {
 	ctx := context.Background()
 	svc := newTestService(t)
