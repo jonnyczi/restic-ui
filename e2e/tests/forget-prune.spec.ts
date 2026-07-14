@@ -34,7 +34,7 @@ test("two backups produce two snapshots", async () => {
   for (const op of [1, 2]) {
     await card.getByRole("button", { name: "Run now" }).click();
     await card.getByText("Backup started").waitFor();
-    await page.getByRole("link", { name: "Operations" }).click();
+    await page.getByRole("link", { name: "Operations", exact: true }).click();
     await waitOpStatus(page, op, "success");
     await page.getByRole("link", { name: "Plans" }).click();
   }
@@ -60,7 +60,7 @@ test("forget removes the snapshot after confirmation", async () => {
   await repo.getByRole("button", { name: "Forget", exact: true }).click();
   await repo.getByText("Forget started").waitFor();
 
-  await page.getByRole("link", { name: "Operations" }).click();
+  await page.getByRole("link", { name: "Operations", exact: true }).click();
   await waitOpStatus(page, 3, "success");
   await expect(page.getByTestId("op-row-3").getByText("forget")).toBeVisible();
 
@@ -82,7 +82,7 @@ test("prune runs after inline confirmation", async () => {
   await repo.getByRole("button", { name: "Prune", exact: true }).click();
   await repo.getByText("Prune started").waitFor();
 
-  await page.getByRole("link", { name: "Operations" }).click();
+  await page.getByRole("link", { name: "Operations", exact: true }).click();
   await waitOpStatus(page, 4, "success", 120_000);
   await expect(page.getByTestId("op-row-4").getByText("prune")).toBeVisible();
   await page.getByTestId("op-row-4").click();

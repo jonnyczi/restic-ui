@@ -46,7 +46,7 @@ test.beforeAll(async ({ browser }) => {
   const card = page.getByTestId("plan-docs");
   await card.getByRole("button", { name: "Run now" }).click();
   await card.getByText("Backup started").waitFor();
-  await page.getByRole("link", { name: "Operations" }).click();
+  await page.getByRole("link", { name: "Operations", exact: true }).click();
   await waitOpStatus(page, 1, "success");
 });
 test.afterAll(async () => page.close());

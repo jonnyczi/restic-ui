@@ -50,7 +50,7 @@ test("run now → operation succeeds live over the websocket", async () => {
   await card.getByRole("button", { name: "Run now" }).click();
   await card.getByText("Backup started").waitFor();
 
-  await page.getByRole("link", { name: "Operations" }).click();
+  await page.getByRole("link", { name: "Operations", exact: true }).click();
   await page.getByTestId("op-row-1").click(); // expand to watch logs
   // Status must flip to success without a reload (websocket-driven).
   await waitOpStatus(page, 1, "success");
@@ -68,7 +68,7 @@ test("a second run produces a second snapshot", async () => {
   await card.getByRole("button", { name: "Run now" }).click();
   await card.getByText("Backup started").waitFor();
 
-  await page.getByRole("link", { name: "Operations" }).click();
+  await page.getByRole("link", { name: "Operations", exact: true }).click();
   await waitOpStatus(page, 2, "success");
 
   await page.getByRole("link", { name: "Repositories" }).click();
@@ -97,7 +97,7 @@ test("an every-minute cron plan fires by itself", async () => {
   await page.getByRole("button", { name: "Create plan" }).click();
   await page.getByRole("button", { name: "Add plan" }).waitFor();
 
-  await page.getByRole("link", { name: "Operations" }).click();
+  await page.getByRole("link", { name: "Operations", exact: true }).click();
   await page.getByTestId("op-row-3").waitFor({ timeout: 75_000 });
   await expect(page.getByTestId("op-row-3").getByText("cron-test")).toBeVisible();
   await waitOpStatus(page, 3, "success");
