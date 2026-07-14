@@ -16,6 +16,7 @@ import (
 
 	"github.com/jonnyczi/restic-ui/internal/crypto"
 	"github.com/jonnyczi/restic-ui/internal/restic"
+	"github.com/jonnyczi/restic-ui/internal/schedule"
 	"github.com/jonnyczi/restic-ui/internal/store"
 )
 
@@ -56,8 +57,10 @@ type Repo struct {
 	BackendType restic.Backend `json:"backendType"`
 	Config      Config         `json:"config"`
 	HasSecrets  bool           `json:"hasSecrets"`
-	CreatedAt   string         `json:"createdAt"`
-	UpdatedAt   string         `json:"updatedAt"`
+	// CheckScheduleCron schedules automatic integrity checks (empty = none).
+	CheckScheduleCron string `json:"checkScheduleCron"`
+	CreatedAt         string `json:"createdAt"`
+	UpdatedAt         string `json:"updatedAt"`
 }
 
 // Input is the create/update payload from the API.
@@ -69,7 +72,8 @@ type Input struct {
 	// empty value means "keep existing".
 	Password string `json:"password"`
 	// Secrets: on update, zero-value fields keep their existing values.
-	Secrets Secrets `json:"secrets"`
+	Secrets           Secrets `json:"secrets"`
+	CheckScheduleCron string  `json:"checkScheduleCron"`
 }
 
 // Service implements repository management.
@@ -96,6 +100,11 @@ func (in *Input) Validate(isCreate bool) error {
 	}
 	if isCreate && in.Password == "" {
 		return errors.New("repository password is required")
+	}
+	if in.CheckScheduleCron != "" {
+		if _, err := schedule.Parse(in.CheckScheduleCron); err != nil {
+			return fmt.Errorf("invalid check schedule %q: %w", in.CheckScheduleCron, err)
+		}
 	}
 	c := in.Config
 	switch in.BackendType {
@@ -159,9 +168,9 @@ func (s *Service) Create(ctx context.Context, in Input) (*Repo, error) {
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	res, err := s.st.DB.ExecContext(ctx, `
-		INSERT INTO repos (name, backend_type, config_json, secrets_enc, repo_password_enc, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		in.Name, string(in.BackendType), string(cfgJSON), secretsEnc, pwEnc, now, now,
+		INSERT INTO repos (name, backend_type, config_json, secrets_enc, repo_password_enc, check_schedule_cron, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		in.Name, string(in.BackendType), string(cfgJSON), secretsEnc, pwEnc, in.CheckScheduleCron, now, now,
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
@@ -213,15 +222,15 @@ func (s *Service) Update(ctx context.Context, id int64, in Input) (*Repo, error)
 			return nil, err
 		}
 		_, err = s.st.DB.ExecContext(ctx, `
-			UPDATE repos SET name=?, config_json=?, secrets_enc=?, repo_password_enc=?, updated_at=? WHERE id=?`,
-			in.Name, string(cfgJSON), secretsEnc, pwEnc, now, id)
+			UPDATE repos SET name=?, config_json=?, secrets_enc=?, repo_password_enc=?, check_schedule_cron=?, updated_at=? WHERE id=?`,
+			in.Name, string(cfgJSON), secretsEnc, pwEnc, in.CheckScheduleCron, now, id)
 		if err != nil {
 			return nil, err
 		}
 	} else {
 		_, err = s.st.DB.ExecContext(ctx, `
-			UPDATE repos SET name=?, config_json=?, secrets_enc=?, updated_at=? WHERE id=?`,
-			in.Name, string(cfgJSON), secretsEnc, now, id)
+			UPDATE repos SET name=?, config_json=?, secrets_enc=?, check_schedule_cron=?, updated_at=? WHERE id=?`,
+			in.Name, string(cfgJSON), secretsEnc, in.CheckScheduleCron, now, id)
 		if err != nil {
 			return nil, err
 		}
@@ -253,7 +262,7 @@ func (s *Service) Get(ctx context.Context, id int64) (*Repo, error) {
 // List returns all repositories without secrets.
 func (s *Service) List(ctx context.Context) ([]Repo, error) {
 	rows, err := s.st.DB.QueryContext(ctx, `
-		SELECT id, name, backend_type, config_json, secrets_enc, created_at, updated_at
+		SELECT id, name, backend_type, config_json, secrets_enc, check_schedule_cron, created_at, updated_at
 		FROM repos ORDER BY name`)
 	if err != nil {
 		return nil, err
@@ -267,7 +276,7 @@ func (s *Service) List(ctx context.Context) ([]Repo, error) {
 			cfgJSON string
 			secEnc  []byte
 		)
-		if err := rows.Scan(&r.ID, &r.Name, (*string)(&r.BackendType), &cfgJSON, &secEnc, &r.CreatedAt, &r.UpdatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.Name, (*string)(&r.BackendType), &cfgJSON, &secEnc, &r.CheckScheduleCron, &r.CreatedAt, &r.UpdatedAt); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(cfgJSON), &r.Config); err != nil {
@@ -316,6 +325,44 @@ func (s *Service) StatsHistory(ctx context.Context, id int64, limit int) ([]Stat
 	return points, rows.Err()
 }
 
+// SetCheckSchedule updates just the integrity-check cron (empty = disabled).
+func (s *Service) SetCheckSchedule(ctx context.Context, id int64, cronExpr string) error {
+	if cronExpr != "" {
+		if _, err := schedule.Parse(cronExpr); err != nil {
+			return fmt.Errorf("invalid check schedule %q: %w", cronExpr, err)
+		}
+	}
+	res, err := s.st.DB.ExecContext(ctx,
+		`UPDATE repos SET check_schedule_cron=?, updated_at=? WHERE id=?`,
+		cronExpr, time.Now().UTC().Format(time.RFC3339), id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ListCheckScheduled returns repos with a check schedule, as scheduler items.
+func (s *Service) ListCheckScheduled(ctx context.Context) ([]schedule.Item, error) {
+	rows, err := s.st.DB.QueryContext(ctx,
+		`SELECT id, check_schedule_cron FROM repos WHERE check_schedule_cron != ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []schedule.Item{}
+	for rows.Next() {
+		var it schedule.Item
+		if err := rows.Scan(&it.ID, &it.Spec); err != nil {
+			return nil, err
+		}
+		items = append(items, it)
+	}
+	return items, rows.Err()
+}
+
 // getFull loads a repo including decrypted secrets and password.
 func (s *Service) getFull(ctx context.Context, id int64) (*Repo, *Secrets, string, error) {
 	var (
@@ -325,9 +372,9 @@ func (s *Service) getFull(ctx context.Context, id int64) (*Repo, *Secrets, strin
 		pwEnc   []byte
 	)
 	err := s.st.DB.QueryRowContext(ctx, `
-		SELECT id, name, backend_type, config_json, secrets_enc, repo_password_enc, created_at, updated_at
+		SELECT id, name, backend_type, config_json, secrets_enc, repo_password_enc, check_schedule_cron, created_at, updated_at
 		FROM repos WHERE id=?`, id,
-	).Scan(&r.ID, &r.Name, (*string)(&r.BackendType), &cfgJSON, &secEnc, &pwEnc, &r.CreatedAt, &r.UpdatedAt)
+	).Scan(&r.ID, &r.Name, (*string)(&r.BackendType), &cfgJSON, &secEnc, &pwEnc, &r.CheckScheduleCron, &r.CreatedAt, &r.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, "", ErrNotFound
 	}

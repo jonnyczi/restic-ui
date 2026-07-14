@@ -2,6 +2,7 @@ package plan
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/jonnyczi/restic-ui/internal/crypto"
@@ -101,6 +102,62 @@ func TestCRUDAndScheduledList(t *testing.T) {
 	}
 	if _, err := svc.Get(ctx, p.ID); err != ErrNotFound {
 		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestBackupOptionsArgs(t *testing.T) {
+	cases := []struct {
+		name string
+		opts BackupOptions
+		want []string
+	}{
+		{"zero value", BackupOptions{}, nil},
+		{"upload only", BackupOptions{UploadLimitKiB: 512}, []string{"--limit-upload", "512"}},
+		{"download only", BackupOptions{DownloadLimitKiB: 1024}, []string{"--limit-download", "1024"}},
+		{"both toggles", BackupOptions{ExcludeCaches: true, OneFileSystem: true},
+			[]string{"--exclude-caches", "--one-file-system"}},
+		{"everything", BackupOptions{UploadLimitKiB: 100, DownloadLimitKiB: 200, ExcludeCaches: true, OneFileSystem: true},
+			[]string{"--limit-upload", "100", "--limit-download", "200", "--exclude-caches", "--one-file-system"}},
+	}
+	for _, c := range cases {
+		got := c.opts.Args()
+		if strings.Join(got, " ") != strings.Join(c.want, " ") {
+			t.Errorf("%s: Args() = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestBackupOptionsRoundTripAndValidation(t *testing.T) {
+	svc, repoID := newTestEnv(t)
+	ctx := context.Background()
+
+	opts := BackupOptions{UploadLimitKiB: 512, ExcludeCaches: true}
+	created, err := svc.Create(ctx, Input{
+		Name: "opt", RepoID: repoID, Sources: []string{"/a"}, Options: opts, Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Options != opts {
+		t.Fatalf("create: options = %+v, want %+v", created.Options, opts)
+	}
+
+	opts2 := BackupOptions{DownloadLimitKiB: 99, OneFileSystem: true}
+	updated, err := svc.Update(ctx, created.ID, Input{
+		Name: "opt", RepoID: repoID, Sources: []string{"/a"}, Options: opts2, Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Options != opts2 {
+		t.Fatalf("update: options = %+v, want %+v", updated.Options, opts2)
+	}
+
+	if _, err := svc.Create(ctx, Input{
+		Name: "neg", RepoID: repoID, Sources: []string{"/a"},
+		Options: BackupOptions{UploadLimitKiB: -1},
+	}); err == nil {
+		t.Fatal("negative limit accepted")
 	}
 }
 

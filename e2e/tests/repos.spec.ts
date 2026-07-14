@@ -6,6 +6,7 @@ import {
   resetEnv,
   setupAdmin,
   testenvPath,
+  waitOpStatus,
 } from "../helpers";
 
 test.describe.configure({ mode: "serial" });
@@ -35,10 +36,44 @@ test("snapshots list is empty before any backup", async () => {
   await card.getByText("No snapshots yet.").waitFor();
 });
 
-test("integrity check passes", async () => {
+test("integrity check runs as a background operation", async () => {
   const card = page.getByTestId("repo-local-test");
   await card.getByRole("button", { name: "Check" }).click();
-  await card.getByText("Integrity check passed.").waitFor({ timeout: 60_000 });
+  await card.getByText("Check started — see the Operations page.").waitFor();
+
+  await page.getByRole("link", { name: "Operations", exact: true }).click();
+  await expect(page.getByTestId("op-row-1").getByText("check")).toBeVisible();
+  await waitOpStatus(page, 1, "success", 60_000);
+  await page.getByRole("link", { name: "Repositories" }).click();
+});
+
+test("an auto-check schedule saves, survives reload, and fires", async () => {
+  test.setTimeout(240_000); // waits out a cron minute boundary
+
+  const card = page.getByTestId("repo-local-test");
+  await card.getByLabel("Integrity check schedule").selectOption("custom");
+  await card.getByLabel("Custom check cron").fill("* * * * *");
+  await card.getByRole("button", { name: "Save" }).click();
+  await card.getByText(/Auto-check saved/).waitFor();
+
+  await page.reload();
+  await expect(page.getByTestId("repo-local-test").getByLabel("Integrity check schedule")).toHaveValue(
+    "custom",
+  );
+
+  // The every-minute schedule enqueues a check on its own (op #2).
+  await page.getByRole("link", { name: "Operations", exact: true }).click();
+  await page.getByTestId("op-row-2").waitFor({ timeout: 75_000 });
+  await expect(page.getByTestId("op-row-2").getByText("check")).toBeVisible();
+  await waitOpStatus(page, 2, "success");
+
+  // Disable it so it stops firing while later tests run.
+  await page.getByRole("link", { name: "Repositories" }).click();
+  await page
+    .getByTestId("repo-local-test")
+    .getByLabel("Integrity check schedule")
+    .selectOption("");
+  await page.getByTestId("repo-local-test").getByText("Automatic checks disabled.").waitFor();
 });
 
 test("create an S3 repository against MinIO", async () => {

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -22,6 +23,7 @@ func (s *Server) planRoutes(r chi.Router) {
 		r.Get("/", s.handlePlanList)
 		r.Post("/", s.handlePlanCreate)
 		r.Post("/retention-preview", s.handleRetentionPreview)
+		r.Post("/dry-run", s.handlePlanDryRun)
 		r.Route("/{id}", func(r chi.Router) {
 			r.Get("/", s.handlePlanGet)
 			r.Put("/", s.handlePlanUpdate)
@@ -215,6 +217,45 @@ func (s *Server) handleRetentionPreview(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, groups)
+}
+
+// handlePlanDryRun previews what a backup would do, without writing to the
+// repository. Takes the config in the body (like retention-preview) so it
+// works for plans still being edited.
+func (s *Server) handlePlanDryRun(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		RepoID   int64              `json:"repoId"`
+		Sources  []string           `json:"sources"`
+		Excludes []string           `json:"excludes"`
+		Options  plan.BackupOptions `json:"options"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if len(body.Sources) == 0 {
+		writeError(w, http.StatusBadRequest, "at least one source path is required")
+		return
+	}
+	for _, src := range body.Sources {
+		if !strings.HasPrefix(src, "/") {
+			writeError(w, http.StatusBadRequest, "source paths must be absolute")
+			return
+		}
+	}
+	_, rc, err := s.repos.BuildRepoConfig(r.Context(), body.RepoID)
+	if err != nil {
+		writeRepoError(w, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), retentionTimeout)
+	defer cancel()
+	preview, err := s.restic.BackupDryRun(ctx, rc, body.Sources, body.Excludes, body.Options.Args())
+	if err != nil {
+		writeRepoError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, preview)
 }
 
 // handlePlanForget applies the plan's retention policy immediately.

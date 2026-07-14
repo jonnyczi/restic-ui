@@ -15,11 +15,8 @@ import (
 	"github.com/jonnyczi/restic-ui/internal/restic"
 )
 
-// repoTimeout bounds quick repo operations; check gets checkTimeout.
-const (
-	repoTimeout  = 2 * time.Minute
-	checkTimeout = 15 * time.Minute
-)
+// repoTimeout bounds quick repo operations.
+const repoTimeout = 2 * time.Minute
 
 func (s *Server) repoRoutes(r chi.Router) {
 	r.Route("/repos", func(r chi.Router) {
@@ -32,6 +29,7 @@ func (s *Server) repoRoutes(r chi.Router) {
 			r.Post("/init", s.handleRepoInit)
 			r.Post("/test", s.handleRepoTest)
 			r.Post("/check", s.handleRepoCheck)
+			r.Post("/check-schedule", s.handleRepoSetCheckSchedule)
 			r.Post("/unlock", s.handleRepoUnlock)
 			r.Post("/prune", s.handleRepoPrune)
 			r.Get("/snapshots", s.handleRepoSnapshots)
@@ -59,6 +57,25 @@ func writeRepoError(w http.ResponseWriter, err error) {
 	}
 }
 
+// repoView decorates a Repo with its next scheduled integrity check.
+type repoView struct {
+	repo.Repo
+	NextCheck *string `json:"nextCheck,omitempty"`
+}
+
+func (s *Server) decorateRepos(repos []repo.Repo) []repoView {
+	next := s.checkScheduler.NextRuns()
+	out := make([]repoView, len(repos))
+	for i, rp := range repos {
+		out[i] = repoView{Repo: rp}
+		if t, ok := next[rp.ID]; ok {
+			ts := t.Format(time.RFC3339)
+			out[i].NextCheck = &ts
+		}
+	}
+	return out
+}
+
 func (s *Server) handleRepoList(w http.ResponseWriter, r *http.Request) {
 	repos, err := s.repos.List(r.Context())
 	if err != nil {
@@ -66,7 +83,7 @@ func (s *Server) handleRepoList(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "database error")
 		return
 	}
-	writeJSON(w, http.StatusOK, repos)
+	writeJSON(w, http.StatusOK, s.decorateRepos(repos))
 }
 
 func (s *Server) handleRepoCreate(w http.ResponseWriter, r *http.Request) {
@@ -79,6 +96,9 @@ func (s *Server) handleRepoCreate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeRepoError(w, err)
 		return
+	}
+	if err := s.checkScheduler.Reload(r.Context()); err != nil {
+		slog.Error("check scheduler reload", "err", err)
 	}
 	slog.Info("repository created", "id", created.ID, "name", created.Name, "backend", created.BackendType)
 	writeJSON(w, http.StatusCreated, created)
@@ -114,6 +134,9 @@ func (s *Server) handleRepoUpdate(w http.ResponseWriter, r *http.Request) {
 		writeRepoError(w, err)
 		return
 	}
+	if err := s.checkScheduler.Reload(r.Context()); err != nil {
+		slog.Error("check scheduler reload", "err", err)
+	}
 	writeJSON(w, http.StatusOK, updated)
 }
 
@@ -126,6 +149,9 @@ func (s *Server) handleRepoDelete(w http.ResponseWriter, r *http.Request) {
 	if err := s.repos.Delete(r.Context(), id); err != nil {
 		writeRepoError(w, err)
 		return
+	}
+	if err := s.checkScheduler.Reload(r.Context()); err != nil {
+		slog.Error("check scheduler reload", "err", err)
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
@@ -174,19 +200,51 @@ func (s *Server) handleRepoTest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+// handleRepoCheck enqueues a background integrity check (shares the code
+// path with scheduled checks; the old synchronous variant held the HTTP
+// request open for up to 15 minutes).
 func (s *Server) handleRepoCheck(w http.ResponseWriter, r *http.Request) {
-	_, rc, ok := s.withRepoConfig(w, r)
-	if !ok {
+	id, err := repoID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), checkTimeout)
-	defer cancel()
-	report, err := s.restic.Check(ctx, rc)
+	op, err := s.ops.EnqueueCheck(r.Context(), id)
 	if err != nil {
 		writeRepoError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"report": report})
+	writeJSON(w, http.StatusAccepted, op)
+}
+
+// handleRepoSetCheckSchedule updates a repo's integrity-check cron
+// ("" disables) and reloads the check scheduler.
+func (s *Server) handleRepoSetCheckSchedule(w http.ResponseWriter, r *http.Request) {
+	id, err := repoID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	var body struct {
+		CheckScheduleCron string `json:"checkScheduleCron"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := s.repos.SetCheckSchedule(r.Context(), id, body.CheckScheduleCron); err != nil {
+		writeRepoError(w, err)
+		return
+	}
+	if err := s.checkScheduler.Reload(r.Context()); err != nil {
+		slog.Error("check scheduler reload", "err", err)
+	}
+	rp, err := s.repos.Get(r.Context(), id)
+	if err != nil {
+		writeRepoError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.decorateRepos([]repo.Repo{*rp})[0])
 }
 
 // handleRepoPrune enqueues a background prune (long-running; locks the repo

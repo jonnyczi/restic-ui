@@ -18,6 +18,7 @@ import (
 	"github.com/jonnyczi/restic-ui/internal/plan"
 	"github.com/jonnyczi/restic-ui/internal/repo"
 	"github.com/jonnyczi/restic-ui/internal/restic"
+	"github.com/jonnyczi/restic-ui/internal/schedule"
 	"github.com/jonnyczi/restic-ui/internal/store"
 )
 
@@ -26,16 +27,17 @@ var Version = "dev"
 
 // Server holds shared dependencies for HTTP handlers.
 type Server struct {
-	store     *store.Store
-	cfg       *config.Config
-	auth      *auth.Service
-	repos     *repo.Service
-	plans     *plan.Service
-	restic    *restic.Runner
-	hub       *ops.Hub
-	ops       *ops.Runner
-	scheduler *plan.Scheduler
-	notify    *notify.Service
+	store          *store.Store
+	cfg            *config.Config
+	auth           *auth.Service
+	repos          *repo.Service
+	plans          *plan.Service
+	restic         *restic.Runner
+	hub            *ops.Hub
+	ops            *ops.Runner
+	scheduler      *schedule.Scheduler // plan backups
+	checkScheduler *schedule.Scheduler // repo integrity checks
+	notify         *notify.Service
 }
 
 // NewServer constructs a Server with all services wired.
@@ -52,16 +54,31 @@ func NewServer(st *store.Store, cfg *config.Config, box *crypto.Box) *Server {
 	s.notify = notify.NewService(st, s.plans)
 	s.ops = ops.NewRunner(st, s.repos, s.plans, s.restic, s.hub)
 	s.ops.SetNotifier(s.notify)
-	s.scheduler = plan.NewScheduler(s.plans, func(planID int64) {
+	s.scheduler = schedule.New("plan", func(ctx context.Context) ([]schedule.Item, error) {
+		plans, err := s.plans.ListScheduled(ctx)
+		if err != nil {
+			return nil, err
+		}
+		items := make([]schedule.Item, len(plans))
+		for i, p := range plans {
+			items[i] = schedule.Item{ID: p.ID, Spec: p.ScheduleCron}
+		}
+		return items, nil
+	}, func(planID int64) {
 		if _, err := s.ops.EnqueueBackup(context.Background(), planID); err != nil {
 			slog.Error("scheduled backup enqueue", "plan", planID, "err", err)
+		}
+	})
+	s.checkScheduler = schedule.New("repo check", s.repos.ListCheckScheduled, func(repoID int64) {
+		if _, err := s.ops.EnqueueCheck(context.Background(), repoID); err != nil {
+			slog.Error("scheduled check enqueue", "repo", repoID, "err", err)
 		}
 	})
 	return s
 }
 
 // Start brings up background machinery: marks operations interrupted by a
-// previous process, registers schedules, and starts the cron loop.
+// previous process, registers schedules, and starts the cron loops.
 func (s *Server) Start(ctx context.Context) error {
 	if err := s.ops.ResumeInterrupted(ctx); err != nil {
 		return err
@@ -69,12 +86,19 @@ func (s *Server) Start(ctx context.Context) error {
 	if err := s.scheduler.Reload(ctx); err != nil {
 		return err
 	}
+	if err := s.checkScheduler.Reload(ctx); err != nil {
+		return err
+	}
 	s.scheduler.Start()
+	s.checkScheduler.Start()
 	return nil
 }
 
-// Stop halts the scheduler.
-func (s *Server) Stop() { s.scheduler.Stop() }
+// Stop halts the schedulers.
+func (s *Server) Stop() {
+	s.scheduler.Stop()
+	s.checkScheduler.Stop()
+}
 
 // Router builds the top-level HTTP handler. The provided spa handler serves the
 // embedded frontend for any non-/api route.

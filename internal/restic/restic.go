@@ -203,12 +203,6 @@ func (r *Runner) Stats(ctx context.Context, repo RepoConfig) (*Stats, error) {
 	return &st, nil
 }
 
-// Check verifies repository integrity, returning restic's textual report.
-func (r *Runner) Check(ctx context.Context, repo RepoConfig) (string, error) {
-	out, err := r.Run(ctx, repo, "check")
-	return string(out), err
-}
-
 // LsNode is one entry from `restic ls --json`.
 type LsNode struct {
 	Name  string `json:"name"`
@@ -272,6 +266,170 @@ func (r *Runner) DumpCommand(ctx context.Context, repo RepoConfig, snapshotID, p
 func (r *Runner) Unlock(ctx context.Context, repo RepoConfig) error {
 	_, err := r.Run(ctx, repo, "unlock")
 	return err
+}
+
+// maxDiffChanges caps how many per-path changes Diff returns — a diff
+// between distant snapshots can list hundreds of thousands of paths.
+const maxDiffChanges = 1000
+
+// DiffChange is one changed path between two snapshots. Modifier is restic's
+// change marker (+ added, - removed, M modified, T type change, ...).
+type DiffChange struct {
+	Path     string `json:"path"`
+	Modifier string `json:"modifier"`
+}
+
+// DiffSide aggregates one direction of a diff's statistics.
+type DiffSide struct {
+	Files int64 `json:"files"`
+	Dirs  int64 `json:"dirs"`
+	Bytes int64 `json:"bytes"`
+}
+
+// DiffStats is the summary line of `restic diff --json`.
+type DiffStats struct {
+	SourceSnapshot string   `json:"source_snapshot"`
+	TargetSnapshot string   `json:"target_snapshot"`
+	ChangedFiles   int64    `json:"changed_files"`
+	Added          DiffSide `json:"added"`
+	Removed        DiffSide `json:"removed"`
+}
+
+// DiffResult is a parsed snapshot comparison.
+type DiffResult struct {
+	Changes   []DiffChange `json:"changes"`
+	Truncated bool         `json:"truncated"`
+	Stats     *DiffStats   `json:"stats,omitempty"`
+}
+
+// Diff compares two snapshots. Output is NDJSON: one "change" message per
+// path plus a final "statistics" message (shape captured from restic 0.17.3;
+// there is no documented schema).
+func (r *Runner) Diff(ctx context.Context, repo RepoConfig, fromID, toID string) (*DiffResult, error) {
+	out, err := r.Run(ctx, repo, "diff", fromID, toID, "--json")
+	if err != nil {
+		return nil, err
+	}
+	res := &DiffResult{Changes: []DiffChange{}}
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var probe struct {
+			MessageType string `json:"message_type"`
+			DiffChange
+			DiffStats
+		}
+		if json.Unmarshal([]byte(line), &probe) != nil {
+			continue
+		}
+		switch probe.MessageType {
+		case "change":
+			if len(res.Changes) >= maxDiffChanges {
+				res.Truncated = true
+				continue
+			}
+			res.Changes = append(res.Changes, probe.DiffChange)
+		case "statistics":
+			st := probe.DiffStats
+			res.Stats = &st
+		}
+	}
+	return res, nil
+}
+
+// FindMatch is one matched node inside a snapshot.
+type FindMatch struct {
+	Path  string `json:"path"`
+	Type  string `json:"type"`
+	Size  int64  `json:"size"`
+	Mtime string `json:"mtime"`
+}
+
+// FindResult groups a pattern's matches by snapshot.
+type FindResult struct {
+	Snapshot string      `json:"snapshot"`
+	Hits     int64       `json:"hits"`
+	Matches  []FindMatch `json:"matches"`
+}
+
+// Find locates a filename pattern across all snapshots, newest first.
+// (restic's own group order varies between versions; sorted here by scanning
+// snapshot list order is unavailable, so callers get input order normalized
+// only for nil slices — the UI resolves times from its snapshot list.)
+func (r *Runner) Find(ctx context.Context, repo RepoConfig, pattern string) ([]FindResult, error) {
+	var results []FindResult
+	if err := r.RunJSON(ctx, repo, &results, "find", pattern); err != nil {
+		return nil, err
+	}
+	if results == nil {
+		results = []FindResult{}
+	}
+	for i := range results {
+		if results[i].Matches == nil {
+			results[i].Matches = []FindMatch{}
+		}
+	}
+	return results, nil
+}
+
+// BackupPreview is the summary of a `backup --dry-run --json` run
+// (restic-native snake_case, like Operation summaries).
+type BackupPreview struct {
+	FilesNew            int64   `json:"files_new"`
+	FilesChanged        int64   `json:"files_changed"`
+	FilesUnmodified     int64   `json:"files_unmodified"`
+	DataAdded           int64   `json:"data_added"`
+	TotalFilesProcessed int64   `json:"total_files_processed"`
+	TotalBytesProcessed int64   `json:"total_bytes_processed"`
+	TotalDuration       float64 `json:"total_duration"`
+}
+
+// BackupDryRun reports what a backup would do without writing anything.
+// extraFlags are additional backup flags (e.g. --exclude-caches). The stream
+// is the same NDJSON a real backup emits; only the final summary line is
+// kept. Exit code 3 (some files unreadable) still produces a summary and is
+// treated as a successful preview.
+func (r *Runner) BackupDryRun(ctx context.Context, repo RepoConfig, sources, excludes, extraFlags []string) (*BackupPreview, error) {
+	args := append([]string{"backup"}, sources...)
+	for _, e := range excludes {
+		args = append(args, "--exclude", e)
+	}
+	args = append(args, extraFlags...)
+	args = append(args, "--dry-run", "--json")
+
+	out, runErr := r.Run(ctx, repo, args...)
+	var preview *BackupPreview
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var probe struct {
+			MessageType string `json:"message_type"`
+			BackupPreview
+		}
+		if json.Unmarshal([]byte(line), &probe) != nil || probe.MessageType != "summary" {
+			continue
+		}
+		p := probe.BackupPreview
+		preview = &p
+	}
+	if preview == nil {
+		if runErr != nil {
+			return nil, runErr
+		}
+		return nil, errors.New("restic produced no backup summary")
+	}
+	if runErr != nil {
+		var e *Error
+		if errors.As(runErr, &e) && e.ExitCode == 3 {
+			return preview, nil // partial read errors; the preview is still valid
+		}
+		return nil, runErr
+	}
+	return preview, nil
 }
 
 // ForgetDryRun reports which snapshots a `forget` policy would keep or

@@ -75,6 +75,12 @@ test("deep content fits at 360px (snapshots, browser, expanded op)", async () =>
   await repo.locator("tbody tr").first().waitFor();
   expect(await hOverflow(), "snapshot table overflows").toBe(0);
 
+  // Find results (mono paths) must not widen the page either.
+  await repo.getByLabel("Find file pattern").fill("a.txt");
+  await repo.getByRole("button", { name: "Find", exact: true }).click();
+  await repo.getByTestId("find-results").waitFor({ timeout: 60_000 });
+  expect(await hOverflow(), "find results overflow").toBe(0);
+
   // Browse the snapshot down to real file rows (name/size/actions columns).
   await repo.locator("tbody tr").first().click(); // toggles the snapshot browser
   const sb = page.getByTestId("snapshot-browser");

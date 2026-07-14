@@ -287,6 +287,82 @@ func TestUpdatePreservesSecretsWhenOmitted(t *testing.T) {
 	}
 }
 
+func TestCheckScheduleRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestService(t)
+
+	created, err := svc.Create(ctx, Input{
+		Name: "checked", BackendType: restic.BackendLocal, Password: "p",
+		Config: Config{Path: "/x"}, CheckScheduleCron: "0 3 * * 0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.CheckScheduleCron != "0 3 * * 0" {
+		t.Fatalf("create: cron = %q", created.CheckScheduleCron)
+	}
+
+	// Invalid cron rejected on create and on SetCheckSchedule.
+	if _, err := svc.Create(ctx, Input{
+		Name: "bad", BackendType: restic.BackendLocal, Password: "p",
+		Config: Config{Path: "/x"}, CheckScheduleCron: "nope",
+	}); err == nil {
+		t.Fatal("invalid cron accepted on create")
+	}
+	if err := svc.SetCheckSchedule(ctx, created.ID, "nope"); err == nil {
+		t.Fatal("invalid cron accepted on SetCheckSchedule")
+	}
+	if err := svc.SetCheckSchedule(ctx, 9999, "0 2 * * *"); err != ErrNotFound {
+		t.Fatalf("missing repo: err = %v, want ErrNotFound", err)
+	}
+
+	// Update WITHOUT password keeps the password and writes the new cron.
+	updated, err := svc.Update(ctx, created.ID, Input{
+		Name: "checked", BackendType: restic.BackendLocal,
+		Config: Config{Path: "/x"}, CheckScheduleCron: "0 4 * * *",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.CheckScheduleCron != "0 4 * * *" {
+		t.Fatalf("update(no pw): cron = %q", updated.CheckScheduleCron)
+	}
+	if _, _, pw, err := svc.getFull(ctx, created.ID); err != nil || pw != "p" {
+		t.Fatalf("password not preserved: %q err=%v", pw, err)
+	}
+
+	// Update WITH password also writes the cron.
+	updated, err = svc.Update(ctx, created.ID, Input{
+		Name: "checked", BackendType: restic.BackendLocal, Password: "p2",
+		Config: Config{Path: "/x"}, CheckScheduleCron: "30 5 * * *",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.CheckScheduleCron != "30 5 * * *" {
+		t.Fatalf("update(pw): cron = %q", updated.CheckScheduleCron)
+	}
+
+	// SetCheckSchedule with "" disables; ListCheckScheduled filters it out.
+	if err := svc.SetCheckSchedule(ctx, created.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	items, err := svc.ListCheckScheduled(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("scheduled items = %d, want 0", len(items))
+	}
+	if err := svc.SetCheckSchedule(ctx, created.ID, "*/5 * * * *"); err != nil {
+		t.Fatal(err)
+	}
+	items, _ = svc.ListCheckScheduled(ctx)
+	if len(items) != 1 || items[0].ID != created.ID || items[0].Spec != "*/5 * * * *" {
+		t.Fatalf("scheduled items = %+v", items)
+	}
+}
+
 func TestStatsHistoryOrderLimitAndCascade(t *testing.T) {
 	ctx := context.Background()
 	svc := newTestService(t)

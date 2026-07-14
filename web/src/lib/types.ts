@@ -28,6 +28,8 @@ export interface Repo {
   backendType: BackendType;
   config: RepoConfig;
   hasSecrets: boolean;
+  checkScheduleCron: string;
+  nextCheck?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -38,6 +40,7 @@ export interface RepoInput {
   config: RepoConfig;
   password: string;
   secrets: RepoSecrets;
+  checkScheduleCron: string;
 }
 
 export interface Snapshot {
@@ -70,6 +73,13 @@ export interface Retention {
   prune?: boolean;
 }
 
+export interface BackupOptions {
+  uploadLimitKiB?: number;
+  downloadLimitKiB?: number;
+  excludeCaches?: boolean;
+  oneFileSystem?: boolean;
+}
+
 export interface Plan {
   id: number;
   name: string;
@@ -80,6 +90,7 @@ export interface Plan {
   tags: string[];
   scheduleCron: string;
   retention: Retention;
+  options: BackupOptions;
   enabled: boolean;
   notifyMuted: boolean;
   nextRun?: string;
@@ -95,8 +106,43 @@ export interface PlanInput {
   tags: string[];
   scheduleCron: string;
   retention: Retention;
+  options: BackupOptions;
   enabled: boolean;
   notifyMuted: boolean;
+}
+
+/** Result of `backup --dry-run` (restic-native snake_case). */
+export interface BackupPreview {
+  files_new: number;
+  files_changed: number;
+  files_unmodified: number;
+  data_added: number;
+  total_files_processed: number;
+  total_bytes_processed: number;
+  total_duration: number;
+}
+
+export interface DiffChange {
+  path: string;
+  modifier: string;
+}
+
+export interface DiffResult {
+  changes: DiffChange[];
+  truncated: boolean;
+  stats?: {
+    source_snapshot: string;
+    target_snapshot: string;
+    changed_files: number;
+    added: { files: number; dirs: number; bytes: number };
+    removed: { files: number; dirs: number; bytes: number };
+  };
+}
+
+export interface FindResult {
+  snapshot: string;
+  hits: number;
+  matches: { path: string; type: string; size: number; mtime: string }[];
 }
 
 export interface ForgetSnapshot {

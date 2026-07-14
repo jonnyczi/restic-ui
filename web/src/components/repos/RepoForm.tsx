@@ -8,7 +8,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCreateRepo, useRepoAction } from "@/hooks/useRepos";
 import { ApiError } from "@/lib/api";
+import { humanizeCron, SCHEDULE_PRESETS } from "@/lib/cronHumanize";
 import type { BackendType, RepoInput } from "@/lib/types";
+
+const CHECK_PRESETS = SCHEDULE_PRESETS.map((p) =>
+  p.value === "" ? { ...p, label: "No automatic checks" } : p,
+);
 
 const BACKEND_LABELS: Record<BackendType, string> = {
   local: "Local path",
@@ -21,6 +26,8 @@ const BACKEND_LABELS: Record<BackendType, string> = {
 export default function RepoForm({ onDone }: { onDone: () => void }) {
   const [backend, setBackend] = useState<BackendType>("local");
   const [autoInit, setAutoInit] = useState(true);
+  const [checkPreset, setCheckPreset] = useState("");
+  const [checkCron, setCheckCron] = useState("");
   const [error, setError] = useState("");
   const [phase, setPhase] = useState<"idle" | "creating" | "initializing">("idle");
 
@@ -39,6 +46,7 @@ export default function RepoForm({ onDone }: { onDone: () => void }) {
       password: str("password"),
       config: {},
       secrets: {},
+      checkScheduleCron: checkPreset === "custom" ? checkCron.trim() : checkPreset,
     };
     switch (backend) {
       case "local":
@@ -215,6 +223,41 @@ export default function RepoForm({ onDone }: { onDone: () => void }) {
             <p className="text-xs text-muted-foreground">
               Encrypts your backups. Store it somewhere safe — without it the data is unrecoverable.
             </p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="checkSchedule">Integrity check schedule</Label>
+              <Select
+                id="checkSchedule"
+                value={checkPreset}
+                onChange={(e) => setCheckPreset(e.target.value)}
+              >
+                {CHECK_PRESETS.map((p) => (
+                  <option key={p.label} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Periodically runs <code>restic check</code> to verify repository integrity.
+              </p>
+            </div>
+            {checkPreset === "custom" && (
+              <div className="space-y-2">
+                <Label htmlFor="checkCron">Cron expression (min hour dom mon dow)</Label>
+                <Input
+                  id="checkCron"
+                  value={checkCron}
+                  onChange={(e) => setCheckCron(e.target.value)}
+                  placeholder="0 5 * * 0"
+                  className="font-mono"
+                />
+                {checkCron.trim() && (
+                  <p className="text-xs text-muted-foreground">{humanizeCron(checkCron)}</p>
+                )}
+              </div>
+            )}
           </div>
 
           <label className="flex items-center gap-2 text-sm">

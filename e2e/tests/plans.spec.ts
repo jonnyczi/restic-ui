@@ -84,6 +84,38 @@ test("excluded files are not in the snapshot (restic CLI cross-check)", async ()
   expect(ls).not.toContain("skip.tmp");
 });
 
+test("a dry-run previews the backup without creating a snapshot", async () => {
+  await page.getByRole("link", { name: "Plans" }).click();
+  const card = page.getByTestId("plan-docs-nightly");
+  await card.getByRole("button", { name: "Edit plan" }).click();
+
+  await page.getByRole("button", { name: "Dry-run this backup" }).click();
+  const result = page.getByTestId("dry-run-result");
+  await result.waitFor({ timeout: 60_000 });
+  await expect(result.getByText(/Would add/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Cancel" }).click();
+  // Still exactly two snapshots — the dry run wrote nothing.
+  const snaps = resticInContainer("/repos/main", "pass-main-repo", "snapshots --compact");
+  expect(snaps).toContain("2 snapshots");
+});
+
+test("backup options persist through an edit round-trip", async () => {
+  const card = page.getByTestId("plan-docs-nightly");
+  await card.getByRole("button", { name: "Edit plan" }).click();
+
+  await page.fill("#uploadLimit", "512");
+  const cachesBox = page.getByText("Skip cache dirs (CACHEDIR.TAG)").locator("input");
+  await cachesBox.click();
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await page.getByRole("button", { name: "Add plan" }).waitFor();
+
+  await card.getByRole("button", { name: "Edit plan" }).click();
+  await expect(page.locator("#uploadLimit")).toHaveValue("512");
+  await expect(page.getByText("Skip cache dirs (CACHEDIR.TAG)").locator("input")).toBeChecked();
+  await page.getByRole("button", { name: "Cancel" }).click();
+});
+
 test("an every-minute cron plan fires by itself", async () => {
   test.setTimeout(240_000); // waits out a cron minute boundary
 

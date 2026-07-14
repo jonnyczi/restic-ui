@@ -13,15 +13,26 @@ container.
   **encrypted at rest** (AES-256-GCM).
 - Scheduled **backup plans** with an in-UI folder picker, include/exclude
   patterns, tags, cron schedules, and per-plan **retention** (`forget` +
-  `prune`, applied automatically after each backup).
+  `prune`, applied automatically after each backup) — with a **dry-run
+  preview** of what a backup would add and which snapshots retention would
+  keep, before committing to either.
+- Per-plan **bandwidth limits** and backup flags (`--exclude-caches`,
+  `--one-file-system`) for homelab-friendly scheduling.
+- **Scheduled integrity checks** (`restic check` on its own cron, per repo).
 - **Browse and restore** individual files or folders from any snapshot — no
   FUSE or special container privileges required (uses `restic ls` / `dump`).
+- **Diff two snapshots** and **find files across all snapshots** for restore
+  discovery.
 - **Copy/replicate** snapshots to a second repository (3-2-1 backups).
-- **Live progress and logs** for running operations over WebSocket.
+- **Live progress and logs** for running operations over WebSocket, plus
+  **in-app toasts** when an operation finishes on any page.
+- **Repository growth and backup-duration trends** charted from recorded
+  stats history.
 - Notifications through an **[Apprise API](https://github.com/caronc/apprise-api)
   server** (Discord, Telegram, ntfy, email, and 80+ more) — run the tiny
   `linuxserver/apprise-api` sidecar and point Settings at it.
-- Single-user login with optional **reverse-proxy bypass** (Authelia/Authentik).
+- Single-user login with optional **reverse-proxy bypass** (Authelia/Authentik),
+  plus **dark mode**.
 - _Planned (phase 2):_ host storage for other restic clients (rest-server),
   pre/post hooks, optional FUSE mount, multi-user.
 
