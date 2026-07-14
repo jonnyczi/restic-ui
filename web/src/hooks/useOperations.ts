@@ -1,7 +1,47 @@
 import { useEffect } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import type { LogLine, Operation, OpProgress, StreamEvent } from "@/lib/types";
+import { pushToast } from "@/lib/toastStore";
+import { formatBytes, type LogLine, type Operation, type OpProgress, type StreamEvent } from "@/lib/types";
+
+const TERMINAL: ReadonlySet<Operation["status"]> = new Set([
+  "success",
+  "warning",
+  "error",
+  "canceled",
+]);
+
+const STATUS_VERBS: Record<string, string> = {
+  success: "succeeded",
+  warning: "finished with warnings",
+  error: "failed",
+};
+
+/**
+ * Toast an operation that just reached a terminal state. Skips `canceled`
+ * (user-initiated, already has feedback) and repeats of already-terminal
+ * statuses. Deliberately ignores the plan's notifyMuted flag — that gates
+ * external Apprise pushes; in-app toasts are ambient UI like the Operations
+ * page itself.
+ */
+function maybeToast(op: Operation, seen: Map<number, Operation["status"]>) {
+  const prev = seen.get(op.id);
+  seen.set(op.id, op.status);
+  if (!TERMINAL.has(op.status) || (prev !== undefined && TERMINAL.has(prev))) return;
+  if (op.status === "canceled") return;
+
+  const subject = op.planName || op.repoName;
+  const title = `${op.type[0].toUpperCase()}${op.type.slice(1)}${subject ? ` "${subject}"` : ""} ${STATUS_VERBS[op.status]}`;
+  let message: string | undefined;
+  if (op.status !== "error" && op.summary?.data_added !== undefined) {
+    message = `${formatBytes(op.summary.data_added)} added`;
+  }
+  pushToast({
+    kind: op.status === "success" ? "success" : op.status === "warning" ? "warning" : "error",
+    title,
+    message,
+  });
+}
 
 export function useOperations(limit = 100) {
   return useQuery({
@@ -76,6 +116,11 @@ export function useEventStream(enabled: boolean) {
     let ws: WebSocket | null = null;
     let closed = false;
     let retry = 0;
+    // Last status seen per op id, for toast dedupe. The ["operations"] cache
+    // can't serve this role — it's only populated once the Plans page has
+    // mounted. The hub never replays history on reconnect, so a first-seen
+    // terminal status is always a genuine live completion.
+    const seen = new Map<number, Operation["status"]>();
 
     const connect = () => {
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -94,6 +139,7 @@ export function useEventStream(enabled: boolean) {
         switch (ev.type) {
           case "op": {
             const op = ev.op!;
+            maybeToast(op, seen);
             qc.setQueryData<Operation[]>(["operations"], (old) => {
               if (!old) return old;
               const i = old.findIndex((o) => o.id === op.id);

@@ -52,7 +52,7 @@ test("backup to the SFTP repository succeeds", async () => {
   const card = page.getByTestId("plan-sftp-docs");
   await card.getByRole("button", { name: "Run now" }).click();
   await card.getByText("Backup started").waitFor();
-  await page.getByRole("link", { name: "Operations" }).click();
+  await page.getByRole("link", { name: "Operations", exact: true }).click();
   await waitOpStatus(page, 1, "success", 120_000);
 });
 
@@ -83,7 +83,7 @@ test("forget the SFTP snapshot via inline confirm", async () => {
   await repo.getByRole("button", { name: "Forget", exact: true }).click();
   await repo.getByText("Forget started").waitFor();
 
-  await page.getByRole("link", { name: "Operations" }).click();
+  await page.getByRole("link", { name: "Operations", exact: true }).click();
   await waitOpStatus(page, 2, "success");
   // The snapshots panel is component-local state — re-expand after navigation.
   await page.getByRole("link", { name: "Repositories" }).click();

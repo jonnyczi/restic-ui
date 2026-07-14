@@ -2,6 +2,7 @@ import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { HardDriveDownload, LogOut, Menu, Moon, Sun, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import Toasts from "@/components/Toasts";
 import { useLogout } from "@/hooks/useAuth";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { cn } from "@/lib/utils";
@@ -118,6 +119,7 @@ export default function AppShell({ username }: { username?: string }) {
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
         <Outlet />
       </main>
+      <Toasts />
     </div>
   );
 }

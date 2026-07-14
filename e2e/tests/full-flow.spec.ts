@@ -41,8 +41,15 @@ test("backup #1 chains an automatic retention operation", async () => {
   await card.getByRole("button", { name: "Run now" }).click();
   await card.getByText("Backup started").waitFor();
 
-  await page.getByRole("link", { name: "Operations" }).click();
+  await page.getByRole("link", { name: "Operations", exact: true }).click();
   await waitOpStatus(page, 1, "success"); // backup
+
+  // The completion also raises an in-app toast; dismissing removes it.
+  const toast = page.getByTestId("toast").filter({ hasText: 'Backup "docs" succeeded' });
+  await expect(toast).toBeVisible();
+  await toast.getByRole("button", { name: "Dismiss" }).click();
+  await expect(toast).toHaveCount(0);
+
   await expect(page.getByTestId("op-row-2").getByText("retention")).toBeVisible({
     timeout: 15_000,
   });
@@ -55,7 +62,7 @@ test("backup #2 → retention prunes down to a single snapshot", async () => {
   await card.getByRole("button", { name: "Run now" }).click();
   await card.getByText("Backup started").waitFor();
 
-  await page.getByRole("link", { name: "Operations" }).click();
+  await page.getByRole("link", { name: "Operations", exact: true }).click();
   await waitOpStatus(page, 3, "success");
   await waitOpStatus(page, 4, "success", 120_000);
 
@@ -101,7 +108,7 @@ test("restore a file to /restore and find it on disk", async () => {
   await sb.getByRole("button", { name: "Restore", exact: true }).click();
   await sb.getByText("Restore of b.md started").waitFor();
 
-  await page.getByRole("link", { name: "Operations" }).click();
+  await page.getByRole("link", { name: "Operations", exact: true }).click();
   await waitOpStatus(page, 5, "success");
 
   const restored = readFileSync(testenvPath("restore", "sources", "docs", "b.md"), "utf8");
@@ -117,7 +124,7 @@ test("copy snapshots to the second repository", async () => {
   await repo.getByRole("button", { name: "Copy" }).click();
   await repo.getByText("Copy started").waitFor();
 
-  await page.getByRole("link", { name: "Operations" }).click();
+  await page.getByRole("link", { name: "Operations", exact: true }).click();
   await waitOpStatus(page, 6, "success", 120_000);
 
   const repo2 = page.getByTestId("repo-second-repo");
@@ -137,12 +144,20 @@ test("configure notifications and send a test", async () => {
   expect(appriseLogs()).toContain("test notification");
 });
 
-test("a completed backup sends a notification", async () => {
+test("a completed backup sends a notification and a cross-page toast", async () => {
   await page.getByRole("link", { name: "Plans" }).click();
   const card = page.getByTestId("plan-docs");
   await card.getByRole("button", { name: "Run now" }).click();
   await card.getByText("Backup started").waitFor();
-  await page.getByRole("link", { name: "Operations" }).click();
+
+  // Wait for completion on the Dashboard: the toast must reach pages that
+  // never showed the operation.
+  await page.getByRole("link", { name: "Dashboard" }).click();
+  await expect(
+    page.getByTestId("toast").filter({ hasText: 'Backup "docs" succeeded' }),
+  ).toBeVisible({ timeout: 60_000 });
+
+  await page.getByRole("link", { name: "Operations", exact: true }).click();
   await waitOpStatus(page, 7, "success");
 
   await expect(async () => {
