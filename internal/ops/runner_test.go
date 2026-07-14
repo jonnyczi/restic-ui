@@ -210,6 +210,47 @@ func TestBackupErrorExitCode1(t *testing.T) {
 	}
 }
 
+func TestBackupArgsIncludeOptions(t *testing.T) {
+	// The backup path parses stdout as JSON, so the stub's echoed argv never
+	// reaches the op log — record it to a file instead.
+	argsFile := filepath.Join(t.TempDir(), "argv")
+	script := "#!/bin/sh\n" +
+		"if [ \"$1\" = \"stats\" ]; then echo '{\"total_size\":1,\"total_file_count\":1,\"snapshots_count\":1}'; exit 0; fi\n" +
+		"echo \"$@\" > " + argsFile + "\n" +
+		`echo '{"message_type":"summary","snapshot_id":"abcdef1234567890","files_new":1}'` + "\nexit 0\n"
+	stub := filepath.Join(t.TempDir(), "restic-stub")
+	if err := os.WriteFile(stub, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	runner, _, _, repoID := setup(t, stub)
+	plans := plan.NewService(runner.st)
+	p, err := plans.Create(context.Background(), plan.Input{
+		Name: "opts", RepoID: repoID, Sources: []string{"/data"}, Enabled: true,
+		Options: plan.BackupOptions{UploadLimitKiB: 512, DownloadLimitKiB: 256, ExcludeCaches: true, OneFileSystem: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err := runner.EnqueueBackup(context.Background(), p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, runner, op.ID)
+
+	argv, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"--limit-upload 512", "--limit-download 256", "--exclude-caches", "--one-file-system",
+	} {
+		if !strings.Contains(string(argv), want) {
+			t.Errorf("argv missing %q in: %s", want, argv)
+		}
+	}
+}
+
 func TestStatsHistoryCapture(t *testing.T) {
 	t.Run("backup success captures a point", func(t *testing.T) {
 		runner, _, planID, repoID := setup(t, stubRestic(t, 0))

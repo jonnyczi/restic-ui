@@ -236,6 +236,7 @@ func (r *Runner) runBackup(opID int64, p plan.Plan) (finalStatus string) {
 	for _, t := range p.Tags {
 		args = append(args, "--tag", t)
 	}
+	args = append(args, p.Options.Args()...)
 	args = append(args, "--json")
 
 	cmd := r.restic.Command(ctx, rc, args...)

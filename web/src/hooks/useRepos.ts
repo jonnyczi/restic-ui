@@ -48,6 +48,23 @@ export function usePruneRepo() {
   });
 }
 
+/** Run an integrity check in the background (async op). */
+export function useCheckRepo() {
+  return useMutation({
+    mutationFn: (repoId: number) => api.post<Operation>(`/api/repos/${repoId}/check`),
+  });
+}
+
+/** Set (or clear, with "") a repo's automatic integrity-check schedule. */
+export function useSetCheckSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ repoId, cron }: { repoId: number; cron: string }) =>
+      api.post<Repo>(`/api/repos/${repoId}/check-schedule`, { checkScheduleCron: cron }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["repos"] }),
+  });
+}
+
 export function useSnapshots(repoId: number | null) {
   return useQuery({
     queryKey: ["snapshots", repoId],

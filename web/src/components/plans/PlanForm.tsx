@@ -11,7 +11,16 @@ import { useCreatePlan, useUpdatePlan } from "@/hooks/usePlans";
 import { useRepos } from "@/hooks/useRepos";
 import { api, ApiError } from "@/lib/api";
 import { humanizeCron, SCHEDULE_PRESETS } from "@/lib/cronHumanize";
-import { formatWhen, type ForgetGroup, type Plan, type PlanInput, type Retention } from "@/lib/types";
+import {
+  formatBytes,
+  formatWhen,
+  type BackupOptions,
+  type BackupPreview,
+  type ForgetGroup,
+  type Plan,
+  type PlanInput,
+  type Retention,
+} from "@/lib/types";
 
 /** Create/edit form for a backup plan. */
 export default function PlanForm({
@@ -47,6 +56,8 @@ export default function PlanForm({
   const [prune, setPrune] = useState(existing?.retention?.prune ?? true);
   const [repoId, setRepoId] = useState<number | "">(existing?.repoId ?? "");
   const [preview, setPreview] = useState<ForgetGroup[] | null>(null);
+  const [options, setOptions] = useState<BackupOptions>(existing?.options ?? {});
+  const [dryRun, setDryRun] = useState<BackupPreview | null>(null);
 
   // Match the old native-select behavior: default to the first repo for new
   // plans once the list loads, instead of forcing an explicit empty choice.
@@ -69,6 +80,17 @@ export default function PlanForm({
     onSuccess: setPreview,
   });
 
+  const previewBackup = useMutation({
+    mutationFn: () =>
+      api.post<BackupPreview>("/api/plans/dry-run", {
+        repoId: Number(repoId),
+        sources,
+        excludes,
+        options,
+      }),
+    onSuccess: setDryRun,
+  });
+
   function addSource(path: string) {
     const p = path.trim();
     if (p && !sources.includes(p)) setSources([...sources, p]);
@@ -86,6 +108,7 @@ export default function PlanForm({
       tags,
       scheduleCron: preset === "custom" ? customCron.trim() : preset,
       retention: hasRetention ? { ...retention, prune } : {},
+      options,
       enabled: f.get("enabled") === "on",
       notifyMuted: f.get("notifyMuted") === "on",
     };
@@ -272,6 +295,93 @@ export default function PlanForm({
                 {customCron.trim() && (
                   <p className="text-xs text-muted-foreground">{humanizeCron(customCron)}</p>
                 )}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-2 rounded-md border p-3">
+            <Label>Backup options</Label>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label htmlFor="uploadLimit" className="text-xs text-muted-foreground">
+                  Upload limit (KiB/s, 0 = unlimited)
+                </Label>
+                <Input
+                  id="uploadLimit"
+                  type="number"
+                  min={0}
+                  value={options.uploadLimitKiB ?? ""}
+                  onChange={(e) =>
+                    setOptions({ ...options, uploadLimitKiB: Number(e.target.value) || 0 })
+                  }
+                  placeholder="0"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="downloadLimit" className="text-xs text-muted-foreground">
+                  Download limit (KiB/s, 0 = unlimited)
+                </Label>
+                <Input
+                  id="downloadLimit"
+                  type="number"
+                  min={0}
+                  value={options.downloadLimitKiB ?? ""}
+                  onChange={(e) =>
+                    setOptions({ ...options, downloadLimitKiB: Number(e.target.value) || 0 })
+                  }
+                  placeholder="0"
+                />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-6">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={options.excludeCaches ?? false}
+                  onChange={(e) => setOptions({ ...options, excludeCaches: e.target.checked })}
+                  className="accent-primary"
+                />
+                Skip cache dirs (CACHEDIR.TAG)
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={options.oneFileSystem ?? false}
+                  onChange={(e) => setOptions({ ...options, oneFileSystem: e.target.checked })}
+                  className="accent-primary"
+                />
+                Don't cross filesystem boundaries
+              </label>
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!repoId || sources.length === 0 || previewBackup.isPending}
+                onClick={() => {
+                  setDryRun(null);
+                  previewBackup.mutate();
+                }}
+              >
+                {previewBackup.isPending && <Loader2 className="animate-spin" />}
+                Dry-run this backup
+              </Button>
+              {previewBackup.isError && (
+                <span className="text-xs text-destructive">
+                  {previewBackup.error instanceof ApiError
+                    ? previewBackup.error.message
+                    : "Dry-run failed"}
+                </span>
+              )}
+            </div>
+            {dryRun && (
+              <div className="rounded-md border bg-background p-2 text-xs" data-testid="dry-run-result">
+                <p className="text-muted-foreground">
+                  Would add <b className="text-foreground">{formatBytes(dryRun.data_added)}</b> —{" "}
+                  {dryRun.files_new} new, {dryRun.files_changed} changed, {dryRun.files_unmodified}{" "}
+                  unchanged file{dryRun.files_unmodified === 1 ? "" : "s"}.
+                </p>
               </div>
             )}
           </div>

@@ -8,17 +8,67 @@ import (
 	"log/slog"
 	"net/http"
 	"path"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 )
 
+// snapIDParam matches restic snapshot ids (short or full hex) — same rule as
+// the ops runner enforces; anything else never reaches restic argv.
+var snapIDParam = regexp.MustCompile(`^[0-9a-fA-F]{8,64}$`)
+
 func (s *Server) snapRoutes(r chi.Router) {
 	r.Get("/repos/{id}/snapshots/{snap}/ls", s.handleSnapLs)
 	r.Get("/repos/{id}/snapshots/{snap}/dump", s.handleSnapDump)
 	r.Post("/repos/{id}/snapshots/{snap}/forget", s.handleSnapForget)
+	r.Get("/repos/{id}/diff", s.handleRepoDiff)
+	r.Get("/repos/{id}/find", s.handleRepoFind)
 	r.Post("/repos/{id}/restore", s.handleRepoRestore)
 	r.Post("/repos/{id}/copy", s.handleRepoCopy)
+}
+
+// handleRepoDiff compares two snapshots (?from=&to=).
+func (s *Server) handleRepoDiff(w http.ResponseWriter, r *http.Request) {
+	from, to := r.URL.Query().Get("from"), r.URL.Query().Get("to")
+	if !snapIDParam.MatchString(from) || !snapIDParam.MatchString(to) {
+		writeError(w, http.StatusBadRequest, "from and to must be snapshot ids")
+		return
+	}
+	_, rc, ok := s.withRepoConfig(w, r)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), repoTimeout)
+	defer cancel()
+	res, err := s.restic.Diff(ctx, rc, from, to)
+	if err != nil {
+		writeRepoError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// handleRepoFind searches all snapshots for a filename pattern (?pattern=).
+func (s *Server) handleRepoFind(w http.ResponseWriter, r *http.Request) {
+	pattern := strings.TrimSpace(r.URL.Query().Get("pattern"))
+	if pattern == "" || strings.HasPrefix(pattern, "-") {
+		writeError(w, http.StatusBadRequest, "a search pattern is required")
+		return
+	}
+	_, rc, ok := s.withRepoConfig(w, r)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), repoTimeout)
+	defer cancel()
+	res, err := s.restic.Find(ctx, rc, pattern)
+	if err != nil {
+		writeRepoError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 func (s *Server) handleSnapForget(w http.ResponseWriter, r *http.Request) {
