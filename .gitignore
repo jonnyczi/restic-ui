@@ -20,6 +20,10 @@ e2e/.testenv/
 e2e/test-results/
 e2e/playwright-report/
 
+# README screenshot pipeline intermediates (committed output: docs/screenshots/)
+e2e/screenshots/raw/
+e2e/screenshots/test-results/
+
 # Built frontend assets are generated (Docker build / `pnpm build`).
 # Keep only the placeholder index.html so `go build` works on a fresh checkout.
 web/dist/*
