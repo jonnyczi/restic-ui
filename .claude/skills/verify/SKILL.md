@@ -38,6 +38,10 @@ cd e2e && npx playwright test tests/repos.spec.ts   # just the affected spec
 test in the matching spec (`auth`, `repos`, `plans`, `full-flow`), using the
 existing helpers (`resetEnv`, `setupAdmin`, `createLocalRepo`, `waitOpStatus`).
 
+**If the change alters a view captured in the README** (see the slugs in
+`docs/screenshots/`), refresh the screenshots too — `/screenshots` skill,
+delegate the run to the `screenshot-runner` agent.
+
 Playwright pitfalls already hit in this repo:
 - Controlled React checkboxes: use `click()` + `expect(...).not.toBeChecked()`,
   never `check()`/`uncheck()` (their instant assertion races the server).
@@ -56,6 +60,11 @@ docker compose -f e2e/docker-compose.test.yml exec -T \
   -e RESTIC_REPOSITORY=/repos/main -e RESTIC_PASSWORD=pass-main-repo \
   app restic snapshots --compact
 ```
+
+`docker compose exec` enters as **root** (privileges drop only for the main
+process). Read-only commands are fine, but anything that writes into a
+local repo needs `--user $(id -u):$(id -g)` — root-owned repo files are
+unreadable by the app afterwards.
 
 ## 4. Security-sensitive changes
 
