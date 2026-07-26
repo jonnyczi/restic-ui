@@ -20,6 +20,7 @@ make docker-multiarch  # amd64 + arm64 via buildx
 go test ./internal/ops/ -run TestBackupSuccess   # single Go test
 cd web && pnpm typecheck                         # frontend type check
 cd e2e && npx playwright test tests/plans.spec.ts  # single e2e spec
+cd e2e && npm run screenshots   # regenerate README screenshots (docs/screenshots/), NOT part of make e2e
 ```
 
 E2E notes: specs each reset a disposable compose environment (app on :8199 + MinIO + a fake Apprise server) via `e2e/reset-env.sh`. Set `CHROMIUM_BIN=/path/to/chromium` to use a system browser (needed on NixOS, where Playwright's downloaded browser won't run). Specs run serially (`workers: 1`); every `docker compose` invocation must carry the same `PUID`/`PGID` (helpers.ts does this) — a mismatched `compose up` recreates the app container under a different uid and leaves `/config` files the runner can't delete.

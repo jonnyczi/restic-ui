@@ -5,6 +5,7 @@ services:
   app:
     build: ..
     image: restic-ui:test
+    hostname: homelab
     ports:
       - "8199:8080"
     environment:
